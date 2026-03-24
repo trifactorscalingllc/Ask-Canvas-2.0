@@ -131,23 +131,35 @@ export async function POST(req: Request) {
        history.push(toolResult)
     }
 
+    // [New Architecture] Save the User's exact prompt to the Database FIRST!
+    // This ensures that if the AI engine crashes (like a 404 Invalid Model), the user's message is still safely recorded.
+    await saveHistory(supabase, user.id, history)
+
     const recentHistory = history.slice(-10)
 
-    const response = await openai.chat.completions.create({
-      model: 'qwen-3-235b-instruct',
-      messages: [
-        { role: 'system', content: 'You are Ask Canvas 2.0. Answer questions about the user\'s Canvas LMS using the tools provided. If you call log_missing_tool, you must inform the user that their request has been logged successfully.' },
-        ...recentHistory.map((m: any) => ({
-          role: m.role,
-          content: m.content || '',
-          tool_calls: m.tool_calls,
-          tool_call_id: m.tool_call_id,
-          name: m.name
-        }))
-      ],
-      tools: tools as any,
-      tool_choice: 'auto',
-    })
+    let response;
+    try {
+      response = await openai.chat.completions.create({
+        model: 'qwen-3-235b-instruct',
+        messages: [
+          { role: 'system', content: 'You are Ask Canvas 2.0. Answer questions about the user\'s Canvas LMS using the tools provided. If you call log_missing_tool, you must inform the user that their request has been logged successfully.' },
+          ...recentHistory.map((m: any) => ({
+            role: m.role,
+            content: m.content || '',
+            tool_calls: m.tool_calls,
+            tool_call_id: m.tool_call_id,
+            name: m.name
+          }))
+        ],
+        tools: tools as any,
+        tool_choice: 'auto',
+      })
+    } catch (engineError: any) {
+      if (engineError.status === 404) {
+        throw new Error("The Cerebras AI model string 'qwen-3-235b-instruct' does not exist in their registry (404 Not Found). Please verify the exact model ID spelling.");
+      }
+      throw engineError;
+    }
 
     const message = response.choices[0].message
 
