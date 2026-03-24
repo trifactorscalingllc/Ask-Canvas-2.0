@@ -36,9 +36,11 @@ export async function updateSession(request: NextRequest) {
 
   const isAuthRoute = request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname.startsWith('/signup') || request.nextUrl.pathname.startsWith('/auth');
   const isAdminRoute = request.nextUrl.pathname.startsWith('/admin');
+  const publicRoutes = ['/', '/privacy', '/security'];
+  const isPublicRoute = publicRoutes.includes(request.nextUrl.pathname);
   const ADMIN_EMAIL = 'admin@trifactorscaling.com';
 
-  if (!user && !isAuthRoute) {
+  if (!user && !isAuthRoute && !isPublicRoute) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
@@ -46,7 +48,7 @@ export async function updateSession(request: NextRequest) {
 
   if (user && isAuthRoute) {
     const url = request.nextUrl.clone()
-    url.pathname = '/'
+    url.pathname = '/chat'
     return NextResponse.redirect(url)
   }
 

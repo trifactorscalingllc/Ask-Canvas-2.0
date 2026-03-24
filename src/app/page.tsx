@@ -1,156 +1,90 @@
-'use client'
-export const dynamic = 'force-dynamic'
+import Link from 'next/link'
+import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
 
-import { useState, useEffect } from 'react'
-import { ChatInterface, Message } from '@/components/chat-interface'
-import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+export default async function LandingPage() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
 
-export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([])
-  const [input, setInput] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  const [pendingToolCall, setPendingToolCall] = useState<any>(null)
-  
-  const supabase = createClient()
-  const router = useRouter()
-
-  useEffect(() => {
-    async function loadHistory() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return
-
-      const { data } = await supabase
-        .from('chats')
-        .select('messages')
-        .eq('user_id', session.user.id)
-        .single()
-
-      if (data && data.messages) {
-        const loaded = (data.messages as any[])
-          .filter(m => m.role === 'user' || (m.role === 'assistant' && !!m.content))
-          .map((m, i) => ({
-            id: `msg-${i}`,
-            role: m.role,
-            content: m.content || ''
-          }))
-        setMessages(loaded)
-      }
-    }
-    loadHistory()
-  }, [])
-
-  const sendMessage = async (e?: React.FormEvent, customPayload?: any) => {
-    e?.preventDefault()
-    
-    if (!input.trim() && !customPayload) return
-
-    let payloadToSend: any = { messages: [] }
-    
-    if (!customPayload) {
-      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: input }
-      setMessages(prev => [...prev, userMsg])
-      payloadToSend.messages = [userMsg]
-      setInput('')
-    } else {
-      payloadToSend = customPayload
-    }
-
-    setIsLoading(true)
-    setPendingToolCall(null)
-
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payloadToSend)
-      })
-
-      const data = await res.json()
-
-      if (data.status === 'requires_confirmation') {
-        setPendingToolCall(data)
-        setMessages(prev => [...prev, {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: `**Confirmation Required:** I am about to execute \`${data.functionName}\` with the following arguments:\n\n\`\`\`json\n${JSON.stringify(data.arguments, null, 2)}\n\`\`\``
-        }])
-      } else if (data.content) {
-        setMessages(prev => [...prev, {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: data.content
-        }])
-      }
-
-    } catch (err) {
-      console.error(err)
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: 'An error occurred while connecting to the engine.' }])
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleConfirmAction = async () => {
-    if (!pendingToolCall) return
-    const customPayload = {
-      pendingToolCall: pendingToolCall.toolCall,
-      toolResult: {
-        role: 'tool',
-        tool_call_id: pendingToolCall.toolCall.id,
-        name: pendingToolCall.functionName,
-        content: `{"status": "success", "message": "Action ${pendingToolCall.functionName} confirmed by user"}`
-      }
-    }
-    await sendMessage(undefined, customPayload)
-  }
-
-  const handleCancelAction = () => {
-    setPendingToolCall(null)
-    setMessages(prev => [...prev, {
-      id: Date.now().toString(),
-      role: 'assistant',
-      content: 'Action cancelled.'
-    }])
-  }
-
-  async function handleSignOut() {
-    await supabase.auth.signOut()
-    router.refresh()
+  if (user) {
+    redirect('/chat')
   }
 
   return (
-    <div className="h-screen bg-gray-100 flex flex-col relative">
-      <div className="absolute top-4 right-4 z-50">
-        <button onClick={handleSignOut} className="px-4 py-2 bg-white text-gray-700 text-sm font-medium rounded-full shadow-md hover:bg-gray-50 border border-gray-200 transition-colors">
-          Sign out
-        </button>
-      </div>
-
-      {pendingToolCall && (
-        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-white p-5 rounded-2xl shadow-xl shadow-gray-200/50 border border-yellow-300 w-[90%] max-w-md animate-in slide-in-from-top-4">
-          <div className="flex items-center space-x-2 mb-2">
-            <span className="flex h-3 w-3 relative">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-yellow-500"></span>
+    <div className="flex flex-col min-h-[calc(100vh-80px)] font-sans">
+      {/* Hero Section */}
+      <section className="bg-white px-6 py-20 lg:py-32 text-center border-b border-gray-100 flex-1 flex flex-col justify-center">
+        <div className="max-w-3xl mx-auto space-y-8">
+          <div className="inline-flex items-center space-x-2 bg-blue-50 text-blue-600 px-4 py-2 rounded-full text-sm font-semibold tracking-wide">
+            <span className="flex h-2 w-2 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
             </span>
-            <h3 className="font-bold text-gray-900">Confirm Action</h3>
+            <span>Ask Canvas 2.0 MVP is Live</span>
           </div>
-          <p className="text-sm text-gray-600 mb-5 leading-relaxed">{pendingToolCall.message}</p>
-          <div className="flex gap-3 justify-end">
-            <button onClick={handleCancelAction} className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-gray-50 rounded-xl border border-gray-200 hover:bg-gray-100 transition-colors">Cancel</button>
-            <button onClick={handleConfirmAction} className="px-5 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 shadow-md transition-colors shadow-blue-600/20">Execute</button>
+          <h1 className="text-5xl lg:text-7xl font-extrabold text-gray-900 tracking-tight leading-tight">
+            Your Personal <br className="hidden sm:block" />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-cyan-500">Canvas LMS Agent</span>
+          </h1>
+          <p className="text-lg lg:text-xl text-gray-500 max-w-2xl mx-auto leading-relaxed">
+            Stop digging through modular tabs and hidden assignment lists. Ask natural questions and get instant, accurate answers about your course data.
+          </p>
+          <div className="flex flex-col sm:flex-row justify-center items-center gap-4 pt-4">
+            <Link href="/signup" className="w-full sm:w-auto px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-full transition-all shadow-lg hover:shadow-blue-500/30 hover:-translate-y-0.5">
+              Create Free Account
+            </Link>
+            <Link href="/login" className="w-full sm:w-auto px-8 py-4 bg-gray-50 hover:bg-gray-100 text-gray-800 font-bold rounded-full border border-gray-200 transition-all shadow-sm">
+              Log In
+            </Link>
           </div>
         </div>
-      )}
-      
-      <ChatInterface
-        messages={messages}
-        input={input}
-        setInput={setInput}
-        sendMessage={sendMessage}
-        isLoading={isLoading}
-      />
+      </section>
+
+      {/* How It Works Section */}
+      <section className="bg-gray-50 px-6 py-24">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl lg:text-4xl font-extrabold text-gray-900 tracking-tight">How it Works</h2>
+            <p className="mt-4 text-gray-500 text-lg">Three simple steps to supercharge your academic workflow.</p>
+          </div>
+          <div className="grid md:grid-cols-3 gap-8">
+            <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 relative hover:shadow-md transition-shadow">
+              <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center font-bold text-xl mb-6">1</div>
+              <h3 className="text-xl font-bold text-gray-900 mb-3">Sync Canvas</h3>
+              <p className="text-gray-500 leading-relaxed">Securely connect your active university Canvas account using an encrypted API token.</p>
+            </div>
+            <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 relative hover:shadow-md transition-shadow">
+              <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center font-bold text-xl mb-6">2</div>
+              <h3 className="text-xl font-bold text-gray-900 mb-3">Ask Anything</h3>
+              <p className="text-gray-500 leading-relaxed">Ask "What is my current grade in Math?" or "What assignments are due this week?"</p>
+            </div>
+            <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 relative hover:shadow-md transition-shadow">
+              <div className="w-12 h-12 bg-teal-100 text-teal-600 rounded-2xl flex items-center justify-center font-bold text-xl mb-6">3</div>
+              <h3 className="text-xl font-bold text-gray-900 mb-3">Learn Faster</h3>
+              <p className="text-gray-500 leading-relaxed">The AI Agent securely reads your data and returns instant, precise answers without hallucinating.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Security Section */}
+      <section className="bg-gray-900 px-6 py-24 text-center">
+        <div className="max-w-3xl mx-auto space-y-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-600/20 text-blue-400 mb-2">
+            <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+          </div>
+          <h2 className="text-3xl lg:text-4xl font-extrabold text-white tracking-tight">Security First. Always.</h2>
+          <p className="text-lg text-gray-400 max-w-2xl mx-auto leading-relaxed">
+            Your academic data belongs to you. We strictly implement standard AES-256-CBC encryption on all Canvas Tokens at rest, ensuring absolute compliance and security.
+          </p>
+          <div className="pt-6">
+            <Link href="/security" className="text-blue-400 hover:text-blue-300 font-semibold flex items-center justify-center hover:underline">
+              Read our full Security Protocol
+              <svg className="w-4 h-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+            </Link>
+          </div>
+        </div>
+      </section>
     </div>
   )
 }
