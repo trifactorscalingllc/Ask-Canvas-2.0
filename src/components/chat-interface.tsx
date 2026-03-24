@@ -1,7 +1,7 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Send } from 'lucide-react';
-
+import { Send, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { submitFeedback } from '@/app/actions/feedback';
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -24,6 +24,12 @@ export function ChatInterface({
   isLoading,
 }: ChatInterfaceProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [feedbackState, setFeedbackState] = useState<Record<string, 'up' | 'down'>>({});
+
+  const handleFeedback = async (messageId: string, query: string, response: string, isHelpful: boolean) => {
+    setFeedbackState(prev => ({ ...prev, [messageId]: isHelpful ? 'up' : 'down' }));
+    await submitFeedback(query, response, isHelpful);
+  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -57,7 +63,7 @@ export function ChatInterface({
             </p>
           </div>
         ) : (
-          messages.map((message) => (
+          messages.map((message, index) => (
             <div
               key={message.id}
               className={`flex ${
@@ -72,7 +78,29 @@ export function ChatInterface({
                 }`}
               >
                 {message.role === 'assistant' ? (
-                  <ReactMarkdown>{message.content}</ReactMarkdown>
+                  <div className="flex flex-col space-y-1">
+                    <ReactMarkdown>{message.content}</ReactMarkdown>
+                    {index === messages.length - 1 && (
+                      <div className="flex items-center space-x-2 pt-1 mt-2 border-t border-gray-200/50 justify-end opacity-80">
+                        <button 
+                          onClick={() => handleFeedback(message.id, messages[index - 1]?.content || 'N/A', message.content, true)}
+                          disabled={feedbackState[message.id] !== undefined}
+                          className={`p-1.5 rounded-md transition-all ${feedbackState[message.id] === 'up' ? 'text-blue-600 bg-blue-100 scale-110' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-200'} disabled:opacity-50`}
+                          title="Helpful"
+                        >
+                          <ThumbsUp className="w-3.5 h-3.5" />
+                        </button>
+                        <button 
+                          onClick={() => handleFeedback(message.id, messages[index - 1]?.content || 'N/A', message.content, false)}
+                          disabled={feedbackState[message.id] !== undefined}
+                          className={`p-1.5 rounded-md transition-all ${feedbackState[message.id] === 'down' ? 'text-red-500 bg-red-100 scale-110' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-200'} disabled:opacity-50`}
+                          title="Not Helpful"
+                        >
+                          <ThumbsDown className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
                 )}
