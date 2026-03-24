@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { createClient } from '@/lib/supabase/server'
 import { decrypt } from '@/lib/crypto'
+import { get_active_courses, get_current_grades, get_upcoming_assignments } from '@/lib/canvas-tools'
 
 const openai = new OpenAI({
   baseURL: 'https://api.cerebras.ai/v1',
@@ -21,16 +22,28 @@ const tools = [
     type: 'function',
     function: {
       name: 'get_current_grades',
-      description: 'Fetch the users current grades for all courses from Canvas.',
-      parameters: { type: 'object', properties: {} },
+      description: 'Fetch the users current grades for a specific course from Canvas.',
+      parameters: {
+        type: 'object',
+        properties: {
+          course_id: { type: 'string' }
+        },
+        required: ['course_id']
+      },
     },
   },
   {
     type: 'function',
     function: {
       name: 'get_upcoming_assignments',
-      description: 'Fetch upcoming assignments across all courses.',
-      parameters: { type: 'object', properties: {} },
+      description: 'Fetch upcoming assignments for a specific course.',
+      parameters: {
+        type: 'object',
+        properties: {
+          course_id: { type: 'string' }
+        },
+        required: ['course_id']
+      },
     },
   },
   {
@@ -83,8 +96,8 @@ export async function POST(req: Request) {
       .eq('id', user.id)
       .single()
 
-    if (userError || !userData) {
-      return NextResponse.json({ error: 'User setup incomplete' }, { status: 400 })
+    if (userError || !userData || !userData.encrypted_canvas_key || !userData.iv) {
+      return NextResponse.json({ error: 'User setup incomplete or Canvas key missing' }, { status: 400 })
     }
 
     let canvasKey = ''
@@ -100,7 +113,7 @@ export async function POST(req: Request) {
       .eq('user_id', user.id)
       .single()
 
-    let history: any[] = chatData?.messages || []
+    let history: any[] = Array.isArray(chatData?.messages) ? chatData?.messages : []
     
     if (incomingMessages && incomingMessages.length > 0) {
       const newMsg = incomingMessages[incomingMessages.length - 1]
@@ -135,14 +148,32 @@ export async function POST(req: Request) {
     const message = response.choices[0].message
 
     if (message.tool_calls && message.tool_calls.length > 0) {
-      const toolCall = message.tool_calls[0]
+      const toolCall = message.tool_calls[0] as any
       const { name, arguments: argsString } = toolCall.function
       const args = JSON.parse(argsString || '{}')
 
       if (name.startsWith('get_')) {
-        // GET Tools: Mock Interceptor
-        const canvasData = { status: 'mocked_canvas_data', tool: name, message: "Decrypted Canvas Key used successfully behind the scenes." }
-        const resultString = JSON.stringify(canvasData)
+        let resultString = '';
+        try {
+          if (name === 'get_active_courses') {
+            const courses = await get_active_courses(canvasKey);
+            resultString = JSON.stringify(courses);
+          } else if (name === 'get_current_grades') {
+            const grades = await get_current_grades(canvasKey, args.course_id);
+            resultString = JSON.stringify(grades);
+          } else if (name === 'get_upcoming_assignments') {
+            const assignments = await get_upcoming_assignments(canvasKey, args.course_id);
+            resultString = JSON.stringify(assignments);
+          } else {
+            resultString = "Tool not implemented.";
+          }
+        } catch (err: any) {
+          if (err.message === '401_UNAUTHORIZED') {
+            resultString = "Your Canvas API key appears to be invalid or expired. Please update it in your settings.";
+          } else {
+            resultString = `Canvas API error: ${err.message}`;
+          }
+        }
 
         history.push(message)
         history.push({
