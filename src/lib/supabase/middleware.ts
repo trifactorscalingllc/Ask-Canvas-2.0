@@ -36,7 +36,7 @@ export async function updateSession(request: NextRequest) {
 
   const isAuthRoute = request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname.startsWith('/signup') || request.nextUrl.pathname.startsWith('/auth');
   const isAdminRoute = request.nextUrl.pathname.startsWith('/admin');
-  const publicRoutes = ['/', '/privacy', '/security'];
+  const publicRoutes = ['/', '/privacy', '/security', '/terms'];
   const isPublicRoute = publicRoutes.includes(request.nextUrl.pathname);
   const ADMIN_EMAIL = 'admin@trifactorscaling.com';
 
