@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 
-export async function login(formData: FormData) {
+export async function login(prevState: any, formData: FormData) {
   const supabase = await createClient()
 
   const data = {
@@ -18,8 +18,8 @@ export async function login(formData: FormData) {
   })
 
   if (error) {
-    console.error('Login error:', error.message)
-    redirect('/login?error=Could not authenticate user')
+    console.error('Auth Failure:', error)
+    return { error: error.message }
   }
 
   revalidatePath('/', 'layout')

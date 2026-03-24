@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { encrypt } from '@/lib/crypto'
 
-export async function signup(formData: FormData) {
+export async function signup(prevState: any, formData: FormData) {
   const supabase = await createClient()
 
   const data = {
@@ -20,8 +20,8 @@ export async function signup(formData: FormData) {
   })
 
   if (authError) {
-    console.error('Signup error:', authError.message)
-    redirect(`/signup?error=${encodeURIComponent(authError.message)}`)
+    console.error('Auth Failure:', authError)
+    return { error: authError.message }
   }
 
   const user = authData.user
@@ -36,8 +36,8 @@ export async function signup(formData: FormData) {
     })
 
     if (dbError) {
-      console.error('DB Insert Error:', dbError.message)
-      redirect(`/signup?error=${encodeURIComponent(dbError.message)}`)
+      console.error('Auth Failure (DB):', dbError)
+      return { error: dbError.message }
     }
   }
 
