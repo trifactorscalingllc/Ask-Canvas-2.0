@@ -32,6 +32,8 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   const isAuthRoute = request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname.startsWith('/signup') || request.nextUrl.pathname.startsWith('/auth');
+  const isAdminRoute = request.nextUrl.pathname.startsWith('/admin');
+  const ADMIN_EMAIL = 'admin@trifactorscaling.com';
 
   if (!user && !isAuthRoute) {
     const url = request.nextUrl.clone()
@@ -43,6 +45,14 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone()
     url.pathname = '/'
     return NextResponse.redirect(url)
+  }
+
+  if (isAdminRoute) {
+    if (!user || user.email !== ADMIN_EMAIL) {
+       const url = request.nextUrl.clone()
+       url.pathname = '/'
+       return NextResponse.redirect(url)
+    }
   }
 
   return supabaseResponse
