@@ -27,7 +27,17 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {children}
+        <footer className="mt-auto py-8 text-center text-sm text-gray-500 border-t border-gray-100 bg-white shadow-inner flex-shrink-0">
+          <div className="flex justify-center space-x-6 font-medium">
+            <a href="/privacy" className="hover:text-blue-600 transition-colors">Privacy Policy</a>
+            <a href="/security" className="hover:text-blue-600 transition-colors">Security</a>
+            <a href="mailto:support@askcanvas.com" className="hover:text-blue-600 transition-colors">Contact Support</a>
+          </div>
+          <p className="mt-4 text-xs text-gray-400 tracking-wide">&copy; {new Date().getFullYear()} Ask Canvas 2.0. All rights reserved.</p>
+        </footer>
+      </body>
     </html>
   );
 }

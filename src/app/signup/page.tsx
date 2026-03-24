@@ -23,7 +23,7 @@ export default function SignupPage({ searchParams }: { searchParams: { error?: s
           </div>
           <div className="space-y-2 pt-1 border-t border-gray-100">
             <label className="text-sm font-semibold text-gray-700" htmlFor="canvas_key">Canvas API Token</label>
-            <p className="text-xs text-gray-400 font-medium mb-1.5 leading-snug">Generate this in your Canvas profile settings. We secure it with AES-256 encryption.</p>
+            <p className="text-xs text-gray-400 font-medium mb-1.5 leading-snug">Your token is encrypted with AES-256. See our <a href="/security" className="text-blue-600 hover:underline">Security Overview</a>.</p>
             <input id="canvas_key" name="canvas_key" type="password" required className="w-full px-4 py-3.5 bg-gray-50 rounded-xl border border-gray-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all text-sm font-mono tracking-tight" placeholder="7~abcdef..." />
           </div>
         </div>
