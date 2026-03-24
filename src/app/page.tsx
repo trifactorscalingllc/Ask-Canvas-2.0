@@ -15,13 +15,6 @@ export default async function LandingPage() {
       {/* Hero Section */}
       <section className="bg-white px-6 py-20 lg:py-32 text-center border-b border-gray-100 flex-1 flex flex-col justify-center">
         <div className="max-w-3xl mx-auto space-y-8">
-          <div className="inline-flex items-center space-x-2 bg-blue-50 text-blue-600 px-4 py-2 rounded-full text-sm font-semibold tracking-wide">
-            <span className="flex h-2 w-2 relative">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
-            </span>
-            <span>Ask Canvas 2.0 MVP is Live</span>
-          </div>
           <h1 className="text-5xl lg:text-7xl font-extrabold text-gray-900 tracking-tight leading-tight">
             Your Personal <br className="hidden sm:block" />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-cyan-500">Canvas LMS Agent</span>
