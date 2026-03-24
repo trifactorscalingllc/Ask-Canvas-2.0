@@ -32,6 +32,11 @@ export default function ChatPage() {
 
   useEffect(() => {
     fetchChats()
+    
+    // Listen for the global Navbar toggle signal
+    const handleToggle = () => setIsSidebarOpen(prev => !prev)
+    window.addEventListener('toggleSidebar', handleToggle)
+    return () => window.removeEventListener('toggleSidebar', handleToggle)
   }, [])
 
   const selectChat = (id: string | null) => {
@@ -196,13 +201,6 @@ export default function ChatPage() {
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col relative h-full">
-        {/* Hamburger Toggle */}
-        <button 
-          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-          className={`absolute top-4 z-30 p-2.5 bg-white border border-gray-200 rounded-xl shadow-sm hover:bg-gray-50 transition-all duration-300 text-gray-600 ${isSidebarOpen ? 'left-4 opacity-0 pointer-events-none' : 'left-4 opacity-100'}`}
-        >
-          <Menu className="w-5 h-5" />
-        </button>
 
         <ChatInterface
           messages={messages}
