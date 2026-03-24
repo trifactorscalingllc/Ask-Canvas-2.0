@@ -88,7 +88,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json()
-    const { messages: incomingMessages, pendingToolCall, toolResult } = body
+    const { messages: incomingMessages, pendingToolCall, toolResult, chatId } = body
 
     if (!process.env.CEREBRAS_API_KEY) {
       return NextResponse.json({ error: 'CEREBRAS_API_KEY is missing from the Server Environment Variables! The AI Engine cannot power on.' }, { status: 500 })
@@ -111,13 +111,17 @@ export async function POST(req: Request) {
        return NextResponse.json({ error: 'Decryption failed' }, { status: 500 })
     }
 
-    const { data: chatData } = await supabase
-      .from('chats')
-      .select('messages')
-      .eq('user_id', user.id)
-      .maybeSingle()
-
-    let history: any[] = Array.isArray(chatData?.messages) ? chatData?.messages : []
+    let history: any[] = []
+    
+    if (chatId) {
+      const { data: chatData } = await supabase
+        .from('chats')
+        .select('messages')
+        .eq('id', chatId)
+        .eq('user_id', user.id)
+        .maybeSingle()
+      history = Array.isArray(chatData?.messages) ? chatData?.messages : []
+    }
     
     if (incomingMessages && incomingMessages.length > 0) {
       const newMsg = incomingMessages[incomingMessages.length - 1]
@@ -132,15 +136,14 @@ export async function POST(req: Request) {
     }
 
     // [New Architecture] Save the User's exact prompt to the Database FIRST!
-    // This ensures that if the AI engine crashes (like a 404 Invalid Model), the user's message is still safely recorded.
-    await saveHistory(supabase, user.id, history)
+    const activeChatId = await saveHistory(supabase, user.id, history, chatId)
 
     const recentHistory = history.slice(-10)
 
     let response;
     try {
       response = await openai.chat.completions.create({
-        model: 'llama3.1-70b',
+        model: 'qwen-3-235b-a22b-instruct-2507',
         messages: [
           { role: 'system', content: 'You are Ask Canvas 2.0. Answer questions about the user\'s Canvas LMS using the tools provided. If you call log_missing_tool, you must inform the user that their request has been logged successfully.' },
           ...recentHistory.map((m: any) => ({
@@ -200,7 +203,7 @@ export async function POST(req: Request) {
         })
 
         const secondResponse = await openai.chat.completions.create({
-          model: 'llama3.1-70b',
+          model: 'qwen-3-235b-a22b-instruct-2507',
           messages: [
             ...history.slice(-10).map((m: any) => ({
                role: m.role,
@@ -215,8 +218,8 @@ export async function POST(req: Request) {
         const finalMsg = secondResponse.choices[0].message
         history.push(finalMsg)
         
-        await saveHistory(supabase, user.id, history)
-        return NextResponse.json(finalMsg)
+        await saveHistory(supabase, user.id, history, activeChatId)
+        return NextResponse.json({ ...finalMsg, chatId: activeChatId })
 
       } else if (name === 'log_missing_tool') {
         await supabase.from('proposed_tools').insert({
@@ -233,7 +236,7 @@ export async function POST(req: Request) {
         })
 
         const secondResponse = await openai.chat.completions.create({
-          model: 'llama3.1-70b',
+          model: 'qwen-3-235b-a22b-instruct-2507',
           messages: [
             ...history.slice(-10).map((m: any) => ({
                role: m.role,
@@ -248,29 +251,28 @@ export async function POST(req: Request) {
         const finalMsg = secondResponse.choices[0].message
         history.push(finalMsg)
 
-        await saveHistory(supabase, user.id, history)
-        return NextResponse.json(finalMsg)
+        await saveHistory(supabase, user.id, history, activeChatId)
+        return NextResponse.json({ ...finalMsg, chatId: activeChatId })
 
       } else if (name.startsWith('post_')) {
         history.push(message)
-        await saveHistory(supabase, user.id, history)
+        await saveHistory(supabase, user.id, history, activeChatId)
         
         return NextResponse.json({
           status: 'requires_confirmation',
           toolCall: toolCall,
           message: 'This action requires your confirmation before writing to Canvas.',
           functionName: name,
-          arguments: args
+          arguments: args,
+          chatId: activeChatId
         })
       }
     }
 
-    if (message.content) {
-      history.push(message)
-      await saveHistory(supabase, user.id, history)
-    }
+    history.push(message)
+    await saveHistory(supabase, user.id, history, activeChatId)
 
-    return NextResponse.json(message)
+    return NextResponse.json({ ...message, chatId: activeChatId })
 
   } catch (err: any) {
     console.error('API Error:', err)
@@ -278,14 +280,14 @@ export async function POST(req: Request) {
   }
 }
 
-async function saveHistory(supabase: any, userId: string, history: any[]) {
-  const { data, error: selectError } = await supabase.from('chats').select('id').eq('user_id', userId).maybeSingle()
-  
-  if (data) {
-    const { error: updateError } = await supabase.from('chats').update({ messages: history, updated_at: new Date().toISOString() }).eq('id', data.id)
+async function saveHistory(supabase: any, userId: string, history: any[], chatId?: string) {
+  if (chatId) {
+    const { error: updateError } = await supabase.from('chats').update({ messages: history, updated_at: new Date().toISOString() }).eq('id', chatId)
     if (updateError) console.error('SaveHistory Update Error:', updateError)
+    return chatId;
   } else {
-    const { error: insertError } = await supabase.from('chats').insert({ user_id: userId, messages: history })
+    const { data: insertData, error: insertError } = await supabase.from('chats').insert({ user_id: userId, messages: history }).select('id').maybeSingle()
     if (insertError) console.error('SaveHistory Insert Error:', insertError)
+    return insertData?.id;
   }
 }
