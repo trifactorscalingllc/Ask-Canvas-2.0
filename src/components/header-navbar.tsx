@@ -26,11 +26,11 @@ export async function HeaderNavbar() {
         <nav className="flex items-center space-x-6">
           {user ? (
             <div className="flex items-center space-x-6">
-              <Link href="/chat" className="text-sm font-semibold text-gray-600 hover:text-blue-600 transition-colors">
-                Chat
+              <Link href="/chat" className="text-xl font-semibold text-gray-600 hover:text-blue-600 transition-colors" title="Chat">
+                💬
               </Link>
-              <Link href="/settings" className="text-sm font-semibold text-gray-600 hover:text-blue-600 transition-colors">
-                Settings
+              <Link href="/settings" className="text-xl font-semibold text-gray-600 hover:text-blue-600 transition-colors" title="Settings">
+                ⚙️
               </Link>
               {user.email === 'admin@trifactorscaling.com' && (
                 <Link href="/admin" className="text-sm font-semibold text-amber-600 hover:text-amber-700 transition-colors">
