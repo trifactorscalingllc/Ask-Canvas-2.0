@@ -6,8 +6,11 @@ export async function updateSession(request: NextRequest) {
     request,
   })
 
+  let supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co'
+  if (supabaseUrl && !supabaseUrl.startsWith('http')) supabaseUrl = `https://${supabaseUrl}`
+
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co',
+    supabaseUrl,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy',
     {
       cookies: {
