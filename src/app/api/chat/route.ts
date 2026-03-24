@@ -111,7 +111,7 @@ export async function POST(req: Request) {
       .from('chats')
       .select('messages')
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
 
     let history: any[] = Array.isArray(chatData?.messages) ? chatData?.messages : []
     
@@ -263,10 +263,13 @@ export async function POST(req: Request) {
 }
 
 async function saveHistory(supabase: any, userId: string, history: any[]) {
-  const { data } = await supabase.from('chats').select('id').eq('user_id', userId).single()
+  const { data, error: selectError } = await supabase.from('chats').select('id').eq('user_id', userId).maybeSingle()
+  
   if (data) {
-    await supabase.from('chats').update({ messages: history, updated_at: new Date().toISOString() }).eq('id', data.id)
+    const { error: updateError } = await supabase.from('chats').update({ messages: history, updated_at: new Date().toISOString() }).eq('id', data.id)
+    if (updateError) console.error('SaveHistory Update Error:', updateError)
   } else {
-    await supabase.from('chats').insert({ user_id: userId, messages: history })
+    const { error: insertError } = await supabase.from('chats').insert({ user_id: userId, messages: history })
+    if (insertError) console.error('SaveHistory Insert Error:', insertError)
   }
 }
