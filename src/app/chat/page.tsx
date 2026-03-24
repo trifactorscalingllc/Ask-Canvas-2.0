@@ -68,6 +68,10 @@ export default function ChatPage() {
 
       const data = await res.json()
 
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'The server responded with a fatal error.')
+      }
+
       if (data.status === 'requires_confirmation') {
         setPendingToolCall(data)
         setMessages(prev => [...prev, {
@@ -83,9 +87,9 @@ export default function ChatPage() {
         }])
       }
 
-    } catch (err) {
+    } catch (err: any) {
       console.error(err)
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: 'An error occurred while connecting to the engine.' }])
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: `🚨 **API Error:** ${err.message}` }])
     } finally {
       setIsLoading(false)
     }

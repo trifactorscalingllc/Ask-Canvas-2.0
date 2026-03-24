@@ -90,6 +90,10 @@ export async function POST(req: Request) {
     const body = await req.json()
     const { messages: incomingMessages, pendingToolCall, toolResult } = body
 
+    if (!process.env.CEREBRAS_API_KEY) {
+      return NextResponse.json({ error: 'CEREBRAS_API_KEY is missing from the Server Environment Variables! The AI Engine cannot power on.' }, { status: 500 })
+    }
+
     const { data: userData, error: userError } = await supabase
       .from('users')
       .select('encrypted_canvas_key, iv')
