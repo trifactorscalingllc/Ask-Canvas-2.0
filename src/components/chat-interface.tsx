@@ -115,7 +115,7 @@ export function ChatInterface({
       <div className="p-4 bg-white border-t border-gray-100 shrink-0 shadow-sm relative z-20">
         <form
           onSubmit={sendMessage}
-          className="flex items-center space-x-3 w-full"
+          className="flex items-center space-x-3 w-[75%] mx-auto"
         >
           <input
             type="text"
