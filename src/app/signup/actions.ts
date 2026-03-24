@@ -26,9 +26,17 @@ export async function signup(prevState: any, formData: FormData) {
 
   const user = authData.user
   if (user) {
-    const supabaseAuth = await createClient() // Instantiate a fresh client to pick up the new auth cookies!
+    if (authData.session) {
+      // Forcefully hydrate the current Supabase client with the newly minted access token
+      // This bypasses the Next.js `cookies()` async race condition that drops the headers for this specific execution block.
+      await supabase.auth.setSession({
+        access_token: authData.session.access_token,
+        refresh_token: authData.session.refresh_token,
+      })
+    }
+
     const { encryptedData, iv } = encrypt(data.canvas_key)
-    const { error: dbError } = await supabaseAuth.from('users').insert({
+    const { error: dbError } = await supabase.from('users').insert({
       id: user.id,
       email: data.email,
       encrypted_canvas_key: encryptedData,
