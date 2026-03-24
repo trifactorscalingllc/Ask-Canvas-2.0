@@ -140,7 +140,7 @@ export async function POST(req: Request) {
     let response;
     try {
       response = await openai.chat.completions.create({
-        model: 'qwen-3-235b-instruct',
+        model: 'llama3.1-70b',
         messages: [
           { role: 'system', content: 'You are Ask Canvas 2.0. Answer questions about the user\'s Canvas LMS using the tools provided. If you call log_missing_tool, you must inform the user that their request has been logged successfully.' },
           ...recentHistory.map((m: any) => ({
@@ -156,7 +156,7 @@ export async function POST(req: Request) {
       })
     } catch (engineError: any) {
       if (engineError.status === 404) {
-        throw new Error("The Cerebras AI model string 'qwen-3-235b-instruct' does not exist in their registry (404 Not Found). Please verify the exact model ID spelling.");
+        throw new Error(`The requested AI model string does not exist in the provider's registry (404 Not Found). Please verify the exact model ID spelling.`);
       }
       throw engineError;
     }
@@ -200,7 +200,7 @@ export async function POST(req: Request) {
         })
 
         const secondResponse = await openai.chat.completions.create({
-          model: 'qwen-3-235b-instruct',
+          model: 'llama3.1-70b',
           messages: [
             ...history.slice(-10).map((m: any) => ({
                role: m.role,
@@ -233,7 +233,7 @@ export async function POST(req: Request) {
         })
 
         const secondResponse = await openai.chat.completions.create({
-          model: 'qwen-3-235b-instruct',
+          model: 'llama3.1-70b',
           messages: [
             ...history.slice(-10).map((m: any) => ({
                role: m.role,
