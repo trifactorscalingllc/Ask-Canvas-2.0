@@ -134,7 +134,7 @@ export async function POST(req: Request) {
     const recentHistory = history.slice(-10)
 
     const response = await openai.chat.completions.create({
-      model: 'llama3.1-70b',
+      model: 'qwen-3-235b-instruct',
       messages: [
         { role: 'system', content: 'You are Ask Canvas 2.0. Answer questions about the user\'s Canvas LMS using the tools provided. If you call log_missing_tool, you must inform the user that their request has been logged successfully.' },
         ...recentHistory.map((m: any) => ({
@@ -188,7 +188,7 @@ export async function POST(req: Request) {
         })
 
         const secondResponse = await openai.chat.completions.create({
-          model: 'llama3.1-70b',
+          model: 'qwen-3-235b-instruct',
           messages: [
             ...history.slice(-10).map((m: any) => ({
                role: m.role,
@@ -221,7 +221,7 @@ export async function POST(req: Request) {
         })
 
         const secondResponse = await openai.chat.completions.create({
-          model: 'llama3.1-70b',
+          model: 'qwen-3-235b-instruct',
           messages: [
             ...history.slice(-10).map((m: any) => ({
                role: m.role,
