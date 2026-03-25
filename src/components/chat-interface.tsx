@@ -2,6 +2,8 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 import { Send, ThumbsUp, ThumbsDown, ExternalLink } from 'lucide-react';
 import { submitFeedback } from '@/app/actions/feedback';
 import { MermaidVisual, FileEmbed } from './chat-visuals';
@@ -69,13 +71,19 @@ function AssistantBubble({ message, isLast, onFeedback, feedbackState }: {
       <div className="max-w-[90%] md:max-w-[85%] bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-2xl rounded-bl-sm px-6 py-4 shadow-sm relative mr-4">
         <div className="prose prose-blue prose-sm dark:prose-invert max-w-none overflow-x-hidden">
           <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            rehypePlugins={[rehypeRaw]}
             components={{
               code: ({ className, children, ...props }: any) => {
                 const match = /language-(\w+)/.exec(className || '')
                 const value = String(children).replace(/\n$/, '')
+                
+                // Only render Mermaid if the typing is DONE or the block is clearly closed
                 if (match && match[1] === 'mermaid') {
+                  if (isNew && !done) return <div className="p-4 bg-gray-900/10 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 animate-pulse text-xs text-gray-400">Generating Diagram...</div>
                   return <MermaidVisual chart={value} />
                 }
+                
                 return (
                   <code className={className} {...props}>
                     {children}

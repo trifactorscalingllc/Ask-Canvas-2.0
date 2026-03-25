@@ -22,29 +22,39 @@ export function MermaidVisual({ chart }: { chart: string }) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    let isMounted = true;
     async function render() {
-      if (!containerRef.current || !chart) return
+      if (!chart || chart.trim().length === 0) return
       
       try {
         const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`
+        // Pre-initialize ensure theme is correct
+        mermaid.initialize({ theme: 'dark', securityLevel: 'loose' })
         const { svg: renderedSvg } = await mermaid.render(id, chart)
-        setSvg(renderedSvg)
-        setError(null)
+        if (isMounted) {
+          setSvg(renderedSvg)
+          setError(null)
+        }
       } catch (err: any) {
         console.error('Mermaid rendering error:', err)
-        setError('Failed to render diagram. Check mermaid syntax.')
+        if (isMounted) setError('Failed to render diagram. Syntax might be incomplete.')
       }
     }
     render()
+    return () => { isMounted = false; }
   }, [chart])
 
-  if (error) return <div className="text-xs text-red-400 bg-red-950/20 p-2 rounded">{error}</div>
+  if (error) return <div className="text-xs text-red-400 bg-red-950/20 p-3 rounded-lg border border-red-900/50 my-2">{error}</div>
+  if (!svg && !error) return <div className="p-8 bg-gray-900/10 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 animate-pulse" />
 
   return (
-    <div 
-      className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-200 dark:border-gray-800 my-4 flex justify-center animate-in fade-in zoom-in duration-300 overflow-x-auto"
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
+    <div className="w-full my-6 flex flex-col items-center gap-2">
+      <div 
+        className="w-full bg-white dark:bg-gray-900 p-6 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm flex justify-center animate-in fade-in zoom-in duration-500 overflow-x-auto min-h-[100px]"
+        dangerouslySetInnerHTML={{ __html: svg }}
+      />
+      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Interactive Study Model</span>
+    </div>
   )
 }
 
