@@ -111,7 +111,7 @@ export async function POST(req: Request) {
     let history: any[] = []
     if (chatId) {
       const { data: cd } = await supabase.from('chats').select('messages').eq('id', chatId).single()
-      history = cd?.messages || []
+      history = (cd?.messages as any[]) || []
     }
     if (incoming?.length) {
       const nm = incoming[incoming.length - 1]
@@ -136,7 +136,7 @@ export async function POST(req: Request) {
           const [memories, pGrades, pAssigns] = await Promise.all([
             supabase.from('user_memories').select('memory_text').eq('user_id', user.id),
             isGrade ? get_all_grades(canvasKey) : Promise.resolve(null),
-            isAssign ? get_all_upcoming_assignments(canvasKey, userData.canvas_cache) : Promise.resolve(null)
+            isAssign ? get_all_upcoming_assignments(canvasKey, userData.canvas_cache as any) : Promise.resolve(null)
           ])
 
           if (pGrades || pAssigns) send("\n(Accessed Canvas records)")
@@ -147,7 +147,7 @@ Name: ${userData.name || "Student"}
 Courses: ${JSON.stringify(userData.canvas_cache || [])}
 Pre-fetched Grades: ${JSON.stringify(pGrades || "None")}
 Pre-fetched Assignments: ${JSON.stringify(pAssigns || "None")}
-Memories: ${memories.data?.map(m => m.memory_text).join('; ') || 'None'}
+Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
 [RULES]
 - If data is in context, answer IMMEDIATELY.
 - Use Mermaid diagrams for complex concepts.
@@ -160,7 +160,6 @@ Memories: ${memories.data?.map(m => m.memory_text).join('; ') || 'None'}
           while (iterations < 5 && !loopFinished) {
             iterations++
 
-            // ── STREAM THE ENTIRE TURN TO KEEP VERCEL ALIVE ───────────────────
             const turnStream = await openai.chat.completions.create({
               model: 'qwen-3-235b-a22b-instruct-2507',
               stream: true,
@@ -174,14 +173,10 @@ Memories: ${memories.data?.map(m => m.memory_text).join('; ') || 'None'}
 
             for await (const chunk of turnStream) {
               const delta = chunk.choices[0]?.delta as any
-
-              // If model is thinking/talking, send tokens to keep connection alive
               if (delta.content) {
                 turnText += delta.content
-                send(delta.content) // Keep user updated in real-time
+                send(delta.content)
               }
-
-              // Handle streaming tool calls
               if (delta.tool_calls) {
                 for (const tc of delta.tool_calls) {
                   if (!turnToolCalls[tc.index]) {
@@ -194,7 +189,6 @@ Memories: ${memories.data?.map(m => m.memory_text).join('; ') || 'None'}
               }
             }
 
-            // Cleanup nulls from the toolCalls map
             turnToolCalls = turnToolCalls.filter(Boolean)
 
             if (turnToolCalls.length > 0) {
@@ -206,7 +200,7 @@ Memories: ${memories.data?.map(m => m.memory_text).join('; ') || 'None'}
                 let res = ''
                 try {
                   if (name === 'get_all_grades') res = JSON.stringify(await get_all_grades(canvasKey))
-                  else if (name === 'get_all_upcoming_assignments') res = JSON.stringify(await get_all_upcoming_assignments(canvasKey, userData.canvas_cache))
+                  else if (name === 'get_all_upcoming_assignments') res = JSON.stringify(await get_all_upcoming_assignments(canvasKey, userData.canvas_cache as any))
                   else if (name === 'get_assignment_details') res = JSON.stringify(await get_assignment_details(canvasKey, args.course_id, args.assignment_id))
                   else if (name === 'save_user_memory') {
                     await supabase.from('user_memories').insert({ user_id: user.id, memory_text: args.preference_text })
@@ -220,21 +214,18 @@ Memories: ${memories.data?.map(m => m.memory_text).join('; ') || 'None'}
               currentHistory.push(assistantMsg)
               results.forEach(r => currentHistory.push(r))
 
-              // Mid-loop history save (Critical for persistence)
               await saveHistory(supabase, user.id, currentHistory, activeChatId)
             } else {
-              // No tools? We are done.
               loopFinished = true
               assembled = turnText
             }
           }
 
-          // Final update
           history.push({ role: 'assistant', content: assembled })
           await saveHistory(supabase, user.id, history, activeChatId)
 
         } catch (err: any) {
-          send("\n\n[Connection Timeout]. Please refresh and the response should be stored in your history.")
+          send("\n\n[Connection Timeout]. Please refresh.")
           await logError({ userId: user?.id, userPrompt: lastPrompt, err })
         } finally {
           controller.close()
