@@ -61,28 +61,27 @@ export async function get_upcoming_assignments(token: string, course_id: string)
   return mapped.slice(0, 20);
 }
 
-/**
- * Fetches assignments across ALL active courses in parallel.
- * Returns a flat list sorted by due date, limited to the next 100 upcoming items.
- * Supports filtering by course name/code to optimize queries.
- */
 export async function get_all_upcoming_assignments(token: string, existingCourses?: any[], courseFilter?: string) {
   let courses = existingCourses || await get_active_courses(token);
 
   if (courseFilter) {
     const filter = courseFilter.toLowerCase();
+    // Use a broader search for course specific fragments
     courses = courses.filter((c: any) =>
       c.name.toLowerCase().includes(filter) ||
-      c.course_code?.toLowerCase().includes(filter)
+      c.course_code?.toLowerCase().includes(filter) ||
+      filter.includes(c.course_code?.toLowerCase() || '')
     );
   }
+
+  // If we identify a specific course, fetch a bit more for it
+  const perPage = courseFilter ? 40 : 15;
 
   const results = await Promise.allSettled(
     courses.map(async (course: any) => {
       try {
-        // PER-FETCH TIMEOUT: 5 seconds - prevent one slow course from hanging the whole request
         const fetchPromise = fetchCanvas(
-          `/api/v1/courses/${course.id}/assignments?bucket=upcoming&per_page=20`,
+          `/api/v1/courses/${course.id}/assignments?bucket=upcoming&per_page=${perPage}`,
           token
         );
         const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 5000));
@@ -92,6 +91,7 @@ export async function get_all_upcoming_assignments(token: string, existingCourse
         if (!Array.isArray(data)) return [];
         return data.map((a: any) => ({
           course: course.name,
+          course_id: course.id,
           name: a.name,
           due_at: a.due_at,
           points_possible: a.points_possible,
@@ -142,20 +142,29 @@ export async function get_assignment_details(token: string, course_id: string, a
 
 export async function get_all_grades(token: string) {
   try {
-    // 1. Fetch only courses where the user is currently enrolled and active
-    const courses = await fetchCanvas('/api/v1/courses?enrollment_state=active&per_page=50', token);
+    // 1. Fetch courses with a broader scope to include potentially completed ones if needed
+    // Using simple 'active' state first, but fetching more to allow for filtering
+    const courses = await fetchCanvas('/api/v1/courses?per_page=100', token);
     if (!Array.isArray(courses)) return [];
 
-    // 2. Filter for Spring 2026 or generic active courses to save time
-    const springCourses = courses.filter((c: any) =>
-      c.name?.toLowerCase().includes('spring 2026') ||
-      c.name?.toLowerCase().includes('spr 26') ||
-      !c.name?.toLowerCase().includes('fall 2025') // Simple exclusion for now
-    ).slice(0, 10); // Limit to top 10 for performance
+    // 2. Identify all potentially relevant courses
+    // Instead of hard-exclucing Fall, we just lower its priority unless specifically matched
+    const sortedCourses = courses
+      .map((c: any) => {
+        const name = c.name?.toLowerCase() || '';
+        let priority = 0;
+        if (name.includes('spring 2026') || name.includes('spr 26')) priority = 10;
+        else if (name.includes('fall 2025') || name.includes('fa 25')) priority = 5;
+        else if (c.enrollment_state === 'active') priority = 7;
+        return { ...c, priority };
+      })
+      .filter(c => c.priority > 0)
+      .sort((a, b) => b.priority - a.priority)
+      .slice(0, 15); // Limit to top 15 relevant courses
 
     // 3. Parallel fetch with short timeouts
     const results = await Promise.allSettled(
-      springCourses.map(async (course: any) => {
+      sortedCourses.map(async (course: any) => {
         const fetchPromise = fetchCanvas(`/api/v1/courses/${course.id}?include[]=total_scores`, token);
         const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 4000));
         return Promise.race([fetchPromise, timeoutPromise]);
@@ -170,6 +179,7 @@ export async function get_all_grades(token: string) {
         return {
           course_name: c.name,
           course_code: c.course_code,
+          course_id: c.id,
           grade: enrollments[0]?.computed_current_grade || 'N/A',
           score: enrollments[0]?.computed_current_score || 'N/A',
         };
