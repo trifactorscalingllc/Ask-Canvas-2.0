@@ -154,20 +154,22 @@ export async function POST(req: Request) {
 
     const recentHistory = history.slice(-10)
 
+    const systemPrompt = `You are Ask Canvas AI, a proactive academic assistant with direct access to the user's Canvas LMS.
+
+TOOL ROUTING RULES (follow exactly):
+- schedule/upcoming/due this week/next week/any assignment list -> call get_all_upcoming_assignments immediately. Do NOT call get_active_courses first. It handles everything internally.
+- specific course assignments -> call get_upcoming_assignments with course_id.
+- grades -> call get_current_grades.
+- list courses -> call get_active_courses.
+- NEVER invent tool names. Use only the OpenAI tool_calls API. No XML tags.
+- Format responses as clean markdown. Today: ${new Date().toDateString()}.`
+
     let response;
     try {
       response = await openai.chat.completions.create({
         model: 'qwen-3-235b-a22b-instruct-2507',
         messages: [
-          { role: 'system', content: `You are Ask Canvas AI, a proactive academic assistant. You have direct access to the user's Canvas LMS data.
-
-Rules:
-- When a user asks about their "schedule", "what is due", "assignments for this/next week", or anything similar: IMMEDIATELY call get_all_upcoming_assignments — do not hedge or warn the user first.
-- When a user asks about a specific course's assignments, use get_upcoming_assignments with that course_id.
-- When asked about grades, use get_current_grades. When asked what courses they have, use get_active_courses.
-- Always format responses as clean markdown with bolded course names and due dates.
-- Never use <tool_call> or <tool_response> XML tags. Use only the structured tool_calls API.
-- Today's date is ${new Date().toDateString()}.` },
+          { role: 'system', content: systemPrompt },
           ...recentHistory.map((m: any) => ({
             role: m.role,
             content: m.content || '',
@@ -232,7 +234,8 @@ Rules:
         const secondResponse = await openai.chat.completions.create({
           model: 'qwen-3-235b-a22b-instruct-2507',
           messages: [
-            ...history.slice(-10).map((m: any) => ({
+            { role: 'system', content: systemPrompt },
+            ...history.slice(-12).map((m: any) => ({
                role: m.role,
                content: m.content || '',
                tool_calls: m.tool_calls,
@@ -265,6 +268,7 @@ Rules:
         const secondResponse = await openai.chat.completions.create({
           model: 'qwen-3-235b-a22b-instruct-2507',
           messages: [
+            { role: 'system', content: systemPrompt },
             ...history.slice(-10).map((m: any) => ({
                role: m.role,
                content: m.content || '',
