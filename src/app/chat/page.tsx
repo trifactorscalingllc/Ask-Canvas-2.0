@@ -112,7 +112,11 @@ export default function ChatPage() {
       const contentType = res.headers.get('content-type') ?? ''
       if (contentType.includes('application/json')) {
         const data = await res.json()
-        if (!res.ok || data.error) throw new Error(data.error || 'Server error.')
+        if (!res.ok) {
+          // LOG THIS: The backend returned a JSON error (likely 500 or 400)
+          const errorMsg = data.error || data.message || 'Unknown server error.';
+          throw new Error(errorMsg)
+        }
         if (data.status === 'requires_confirmation') {
           setPendingToolCall(data)
           setMessages(prev => [...prev, {
@@ -146,15 +150,25 @@ export default function ChatPage() {
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
+      let receivedAnyContent = false
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        buffer += decoder.decode(value, { stream: true })
+        const chunk = decoder.decode(value, { stream: true })
+        if (chunk && chunk !== '\u200B') receivedAnyContent = true
+        buffer += chunk
         // Flush buffer to state on each chunk
         const snapshot = buffer
         setMessages(prev =>
           prev.map(m => m.id === newMsgId ? { ...m, content: snapshot } : m)
+        )
+      }
+
+      // ── BLANK BOX DETECTION (Frontend) ──
+      if (!receivedAnyContent) {
+        setMessages(prev =>
+          prev.map(m => m.id === newMsgId ? { ...m, content: '🚨 **Error:** The assistant returned an empty response. This may be due to rate limits or a temporary provider failure. Please try a different question or refresh the page.' } : m)
         )
       }
 
@@ -214,8 +228,8 @@ export default function ChatPage() {
                   key={chat.id}
                   onClick={() => selectChat(chat.id)}
                   className={`w-full flex items-start gap-3 p-3 rounded-xl text-left transition-all duration-200 border ${currentChatId === chat.id
-                      ? 'bg-blue-50/80 dark:bg-blue-900/30 border-blue-100 dark:border-blue-800 shadow-sm'
-                      : 'hover:bg-gray-50 dark:hover:bg-gray-800 border-transparent hover:border-gray-200 dark:hover:border-gray-700'
+                    ? 'bg-blue-50/80 dark:bg-blue-900/30 border-blue-100 dark:border-blue-800 shadow-sm'
+                    : 'hover:bg-gray-50 dark:hover:bg-gray-800 border-transparent hover:border-gray-200 dark:hover:border-gray-700'
                     }`}
                 >
                   <div className={`mt-0.5 p-1.5 rounded-lg shadow-sm border ${currentChatId === chat.id ? 'bg-blue-600 border-blue-700 text-white' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400'}`}>

@@ -6,11 +6,9 @@ import { decrypt } from '@/lib/crypto'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
-import {
-  get_all_grades,
-  get_all_upcoming_assignments,
-  get_assignment_details
-} from '@/lib/canvas-tools'
+import { get_all_grades, get_all_upcoming_assignments, get_assignment_details } from '@/lib/canvas-tools'
+import { getProviderStatus, updateRateLimits, updateModelAvailability } from '@/lib/provider-monitor'
+import { gradeResponse } from '@/lib/auditor'
 
 const openai = new OpenAI({
   baseURL: 'https://api.cerebras.ai/v1',
@@ -25,7 +23,11 @@ function getSupabaseService() {
   if (_supabaseService) return _supabaseService
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return null
+  if (!url || !key) {
+    console.error(`[Supabase Service Role] MISSING: url=${!!url}, key=${!!key}`)
+    return null
+  }
+  console.log(`[Supabase Service Role] Initializing with URL: ${url}`)
   _supabaseService = createServiceClient(url, key)
   return _supabaseService
 }
@@ -122,7 +124,7 @@ export async function POST(req: Request) {
       if (nm.role === 'user') { history.push(nm); lastPrompt = nm.content || ''; }
     }
 
-    const activeChatId = await saveHistory(supabase, user.id, history, chatId)
+    let activeChatId = await saveHistory(supabase, user.id, history, chatId)
 
     const encoder = new TextEncoder()
     const readable = new ReadableStream({
@@ -135,15 +137,27 @@ export async function POST(req: Request) {
         // START: Initial Pulse
         send("\u200B")
 
+        const status = await getProviderStatus().catch(() => null);
+        if (status?.cerebras_rate_limits) {
+          const limits = status.cerebras_rate_limits;
+          history.push({ role: 'assistant', content: `[INTERNAL] Rate Limit Status: ${limits.requests_remaining}/${limits.requests_limit} reqs, ${limits.tokens_remaining} tokens left.` });
+        }
+        // Refresh models once in a while
+        if (Math.random() > 0.9) {
+          updateModelAvailability(process.env.CEREBRAS_API_KEY!).catch(() => null);
+        }
+
         try {
           const isGrade = /grade|score|how am i doing|classes/.test(lastPrompt.toLowerCase())
-          const isAssign = /assignment|due|upcoming|exam|test|quiz|econ|syllabus/.test(lastPrompt.toLowerCase())
+          const isAssign = /assignment|due|upcoming|exam|test|quiz|syllabus/.test(lastPrompt.toLowerCase())
 
+          history.push({ role: 'assistant', content: `[INTERNAL] Starting data pre-fetch for prompt: "${lastPrompt}"` })
           const [memories, pGrades, pAssigns] = await Promise.all([
             supabase.from('user_memories').select('memory_text').eq('user_id', user.id),
             isGrade ? get_all_grades(canvasKey) : Promise.resolve(null),
             isAssign ? get_all_upcoming_assignments(canvasKey, userData.canvas_cache as any) : Promise.resolve(null)
           ])
+          history.push({ role: 'assistant', content: `[INTERNAL] Pre-fetch complete. Found ${pGrades ? "grades" : "no grades"} and ${pAssigns ? pAssigns.length + " assignments" : "no assignments"}` })
 
           const systemPrompt = `You are the "Ask Canvas" Assistant. v2.0-robust.
 [CRITICAL: FRESH DATA POLICY]
@@ -160,16 +174,27 @@ Pre-fetched (STALE/CONTEXT ONLY):
 Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
 
 [STRICT FORMATTING]
-1. Mermaid graphs: Wrap in \` \` \`mermaid blocks on new lines.
-2. Tables: MUST use standard Markdown with pipes (|) and a divider row (e.g. |---|---|).
+1. Mermaid graphs: Wrap in \`\`\`mermaid blocks on new lines.
+2. Tables: MUST use standard Markdown with pipes (|) and a divider row.
    EXAMPLE:
    | Course | Assignment | Due Date |
    |:-------|:-----------|:---------|
-   | ECON10 | Chapter 1  | Oct 12   |
+   | **ECON 102** | **Bobby the Entrepreneur Assignment** | March 26, 2026, 11:00 AM (EST) |
 3. Spacing: Use double newlines between paragraphs and visuals.
-4. Bold: Use **bold** for names of courses and assignments.`
+4. Bold: Use **bold** for EVERY Course and Assignment name inside table cells.
+5. Dates: Use "Month Day, Year, HH:MM AM/PM (Timezone)" format (e.g., "March 26, 2026, 11:00 AM (EST)").
+
+[CANVAS ACADEMIC CONTEXT]
+- Season: Spring 2026
+- Rule: UNLESS EXPLICITLY TOLD OTHERWISE, only reference Spring 2026 / Spring semester classes in response to queries about assignments, grades, or courses. Ignore older classes unless the user mentions them.
+
+[CONTEXT & RESPONSE POLICY]
+1. **Strict Prompt Adherence**: Only respond to the latest user message. Do not repeat previous information (like assignment lists) unless specifically asked for or needed to answer the new question.
+2. **Reference Resolution**: If the user uses pronouns or vague terms (e.g., "that assignment," "it," "the class"), use the conversation history to identify the specific object being discussed.
+3. **Minimalism**: If the user asks for "classes," do not volunteer "assignments" unless they are integrated into a course overview. NEVER re-display a table or list that was already shown in the history unless the user explicitly asks for it again or it needs updating.`
 
           let currentHistory = [...history.slice(-10)]
+          let anyToolsCalledAcrossIterations = false
 
           while (iterations < 5 && !loopFinished) {
             iterations++
@@ -177,13 +202,18 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
             // SECURITY: If we are close to Vercel's 60s limit (50s), force stop.
             const elapsed = Date.now() - startTime
             if (elapsed > 45000) {
-              send("\n\n(Note: Results partial due to processing limits)")
+              const timeoutMsg = iterations === 1 && !combinedText
+                ? "(Note: Request timed out during initial data fetch. Please try a smaller date range.)"
+                : "(Note: Results partial due to processing limits)";
+              send("\n\n" + timeoutMsg)
+              history.push({ role: 'assistant', content: `[INTERNAL] Timeout reached at ${elapsed}ms. Stopping iterations.` })
               loopFinished = true
               break
             }
 
             // HEARTBEAT: Explicitly send a character before starting a long LLM turn
             send("\u200B")
+            history.push({ role: 'assistant', content: `[INTERNAL] Starting AI iteration ${iterations}...` })
 
             const turnStream = await openai.chat.completions.create({
               model: 'qwen-3-235b-a22b-instruct-2507',
@@ -192,6 +222,16 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
               tools: tools as any,
               tool_choice: 'auto'
             })
+
+            // Track rate limits from the response
+            try {
+              const streamWithResponse = turnStream as any;
+              if (streamWithResponse.response) {
+                updateRateLimits(streamWithResponse.response.headers);
+              }
+            } catch (err) {
+              console.warn('[MONITOR] Failed to capture headers:', err);
+            }
 
             let turnText = ''
             let turnToolCalls: any[] = []
@@ -218,8 +258,10 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
             turnToolCalls = turnToolCalls.filter(Boolean)
 
             if (turnToolCalls.length > 0) {
+              anyToolsCalledAcrossIterations = true
               // HEARTBEAT: Before tool calls
               send("\u200B")
+              history.push({ role: 'assistant', content: `[INTERNAL] Executing tool calls: ${turnToolCalls.map(tc => tc.function.name).join(', ')}` })
 
               const results = await Promise.all(turnToolCalls.map(async (tc: any) => {
                 const name = tc.function.name
@@ -247,8 +289,29 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
             }
           }
 
+          // BLANK BOX DETECTION
+          if (!combinedText && iterations >= 1 && !anyToolsCalledAcrossIterations) {
+            const blankError = "Blank Box - Empty AI Response. This could be due to rate limits or an internal model failure.";
+            history.push({ role: 'assistant', content: `[INTERNAL] ${blankError}` });
+            await logError({ userId: user?.id, userPrompt: lastPrompt, err: new Error(blankError) });
+            // Send a fallback message so the user isn't stuck with a blank box
+            send("(The assistant provided an empty response. This usually indicates a temporary issue with the AI provider. Please try again.)");
+          }
+
           history.push({ role: 'assistant', content: combinedText })
-          await saveHistory(supabase, user.id, history, activeChatId)
+          // Ensure we capture the ID for new chats so the auditor can update them
+          activeChatId = await saveHistory(supabase, user.id, history, activeChatId)
+
+          console.log(`[CHAT] Turn complete. Triggering auditor for chatId: ${activeChatId}`)
+
+          // AUDIT: Fire and forget (post-response)
+          gradeResponse({
+            userId: user.id,
+            chatId: activeChatId,
+            userPrompt: lastPrompt,
+            agentResponse: combinedText,
+            history: history
+          }).catch(e => console.error('[AUDITOR] Trigger Error:', e));
 
         } catch (err: any) {
           send("\n\n(Connection Trace: v2.0.2-timeboxed) Processing took too long. History saved. Please refresh.")
@@ -268,6 +331,7 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
     })
 
   } catch (err: any) {
+    await logError({ err, userPrompt: 'Initial sync/setup phase (Pre-stream)' });
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }

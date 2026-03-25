@@ -12,6 +12,11 @@ export interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  audit?: {
+    score: number;
+    description: string;
+    improvement: string;
+  };
 }
 
 interface ChatInterfaceProps {
@@ -41,7 +46,7 @@ function AssistantBubble({ message, isLast, isStreaming, onFeedback, feedbackSta
       <div className="shrink-0 w-9 h-9 rounded-full overflow-hidden border-2 border-blue-100 shadow-sm mt-1 bg-white">
         <img src="/agent-avatar.png" alt="Agent" className="w-full h-full object-cover scale-[1.3] object-top" />
       </div>
-      <div className="max-w-[90%] md:max-w-[85%] bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-2xl rounded-bl-sm px-6 py-4 shadow-sm relative mr-4">
+      <div className="max-w-[90%] md:max-w-[85%] bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-2xl rounded-bl-sm px-6 py-4 shadow-sm relative mr-4 group">
         <div className="prose prose-blue prose-sm dark:prose-invert max-w-none overflow-x-hidden">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
@@ -186,6 +191,8 @@ function cleanContent(raw: string): string {
   return raw
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
     .replace(/<tool_response>[\s\S]*?<\/tool_response>/g, '')
+    .replace(/\[INTERNAL\][\s\S]*?(\n|$)/g, '') // Strip internal debug logs
+    .replace(/\u200B/g, '') // Strip zero-width space heartbeats
     .trim()
 }
 
@@ -236,7 +243,7 @@ export function ChatInterface({
               const isLast = index === messages.length - 1;
               if (message.role === 'assistant') {
                 const cleaned = cleanContent(message.content);
-                // Skip intermediate tool-call setup messages that have no displayable text
+                // Skip if there's no visible content (prevents empty loading bubbles)
                 if (!cleaned) return null;
                 return (
                   <AssistantBubble
