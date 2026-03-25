@@ -62,8 +62,8 @@ function AssistantBubble({ message, isLast, onFeedback, feedbackState }: {
   return (
     <div className="flex justify-start gap-3 animate-in fade-in slide-in-from-left-3 duration-400">
       {/* Robot Avatar */}
-      <div className="shrink-0 w-9 h-9 rounded-lg overflow-hidden border border-blue-100 shadow-sm mt-1 bg-white">
-        <img src="/agent-avatar.png" alt="Agent" className="w-full h-full object-cover scale-110 object-top" />
+      <div className="shrink-0 w-9 h-9 rounded-full overflow-hidden border-2 border-blue-100 shadow-sm mt-1 bg-white">
+        <img src="/agent-avatar.png" alt="Agent" className="w-full h-full object-cover scale-[1.15] object-top" />
       </div>
       <div className="max-w-[80%] md:max-w-[72%] bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-2xl rounded-bl-sm px-5 py-3.5 shadow-sm">
         <div className="prose prose-blue prose-sm dark:prose-invert">
@@ -99,8 +99,8 @@ function AssistantBubble({ message, isLast, onFeedback, feedbackState }: {
 function ThinkingBubble() {
   return (
     <div className="flex justify-start gap-3 animate-in fade-in slide-in-from-left-3 duration-300">
-      <div className="shrink-0 w-9 h-9 rounded-lg overflow-hidden border border-blue-100 shadow-sm mt-1 bg-white">
-        <img src="/agent-avatar.png" alt="Agent thinking" className="w-full h-full object-cover scale-110 object-top" />
+      <div className="shrink-0 w-9 h-9 rounded-full overflow-hidden border-2 border-blue-100 shadow-sm mt-1 bg-white">
+        <img src="/agent-avatar.png" alt="Agent thinking" className="w-full h-full object-cover scale-[1.15] object-top" />
       </div>
       <div className="bg-gray-100 dark:bg-gray-800 rounded-2xl rounded-bl-sm px-5 py-4 shadow-sm flex items-center gap-1.5">
         <span className="w-2 h-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }} />
