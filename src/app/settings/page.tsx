@@ -5,6 +5,7 @@ import { updateToken, deleteAccount } from './actions'
 import { createClient } from '@/lib/supabase/client'
 import { TokenHelpModal } from '@/components/token-help-modal'
 import { useRouter } from 'next/navigation'
+import { X } from 'lucide-react'
 
 export default function SettingsPage() {
   const [email, setEmail] = useState('')
@@ -39,6 +40,15 @@ export default function SettingsPage() {
 
   return (
     <div className="flex-1 bg-gray-50 py-12 px-4 sm:px-6 lg:px-8 font-sans animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out fill-mode-both">
+      {/* Close Button */}
+      <button
+        onClick={() => router.back()}
+        title="Close Settings"
+        className="fixed top-20 right-6 z-50 p-2 rounded-full bg-white border border-gray-200 shadow-md text-gray-400 hover:text-gray-700 hover:shadow-lg hover:scale-110 transition-all duration-200"
+      >
+        <X className="w-4 h-4" />
+      </button>
+
       <div className="max-w-2xl mx-auto space-y-8">
         <div>
           <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Account Settings</h1>

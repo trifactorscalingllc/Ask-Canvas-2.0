@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { MessageSquare, Settings, Menu } from 'lucide-react'
+import { Settings, Menu } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 
 export function NavIcons() {
@@ -25,10 +25,7 @@ export function NavIcons() {
         <Menu className="w-5 h-5" />
       </button>
 
-      <Link href="/chat" className="text-gray-500 hover:text-blue-600 transition-colors p-1" title="Chat">
-        <MessageSquare className="w-5 h-5" />
-      </Link>
-      
+
       <Link href="/settings" className="text-gray-500 hover:text-blue-600 transition-colors p-1" title="Settings">
         <Settings className="w-5 h-5" />
       </Link>
