@@ -165,6 +165,7 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
           let currentHistory = [...history.slice(-10)]
           let iterations = 0
           let loopFinished = false
+          let combinedText = ''
 
           while (iterations < 3 && !loopFinished) { // Reduced to 3 to stay within 60s
             iterations++
@@ -177,7 +178,7 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
               tool_choice: 'auto'
             })
 
-            let turnText = ''
+            let turnText = '' // This remains local to capturing the current turn's text
             let turnToolCalls: any[] = []
 
             for await (const chunk of turnStream) {
@@ -201,6 +202,7 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
               }
             }
 
+            combinedText += turnText
             turnToolCalls = turnToolCalls.filter(Boolean)
 
             if (turnToolCalls.length > 0) {
@@ -234,7 +236,7 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
             }
           }
 
-          history.push({ role: 'assistant', content: turnText })
+          history.push({ role: 'assistant', content: combinedText })
           await saveHistory(supabase, user.id, history, activeChatId)
 
         } catch (err: any) {
