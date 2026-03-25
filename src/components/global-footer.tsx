@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 export function GlobalFooter() {
   const pathname = usePathname();
 
-  if (pathname === '/chat') return null;
+  if (pathname === '/chat' || pathname === '/') return null;
 
   return (
     <footer className="mt-auto py-8 text-center text-sm text-gray-500 border-t border-gray-100 bg-white shadow-inner flex-shrink-0">
