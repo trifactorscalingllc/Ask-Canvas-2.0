@@ -21,10 +21,10 @@ export function MarketingNav() {
           <Link
             key={label}
             href={href}
-            className={`text-sm font-medium transition-colors duration-150 ${
+            className={`text-sm transition-colors duration-150 ${
               isActive
-                ? 'text-blue-700 font-semibold border-b-2 border-blue-600'
-                : 'text-slate-600 hover:text-slate-900 border-b-2 border-transparent hover:border-slate-300'
+                ? 'text-blue-700 font-semibold'
+                : 'text-slate-500 hover:text-slate-900 font-medium'
             }`}
           >
             {label}

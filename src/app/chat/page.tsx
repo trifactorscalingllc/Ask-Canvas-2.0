@@ -146,16 +146,16 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-64px)] bg-gray-100 flex flex-row relative overflow-hidden animate-in fade-in duration-500">
+    <div className="h-[calc(100vh-64px)] bg-gray-100 dark:bg-gray-950 flex flex-row relative overflow-hidden animate-in fade-in duration-500">
       
       {/* Sidebar Drawer */}
-      <div className={`absolute lg:static top-0 left-0 bg-white shadow-2xl lg:shadow-none border-r ${isSidebarOpen ? 'border-gray-200' : 'border-transparent'} h-full z-40 transition-all duration-500 ease-out ${isSidebarOpen ? 'w-72 translate-x-0' : 'w-0 -translate-x-full lg:translate-x-0 lg:w-0'} overflow-hidden flex flex-col`}>
-        <div className="p-4 border-b border-gray-100 min-w-72">
+      <div className={`absolute lg:static top-0 left-0 bg-white dark:bg-gray-900 shadow-2xl lg:shadow-none border-r ${isSidebarOpen ? 'border-gray-200 dark:border-gray-800' : 'border-transparent'} h-full z-40 transition-all duration-500 ease-out ${isSidebarOpen ? 'w-72 translate-x-0' : 'w-0 -translate-x-full lg:translate-x-0 lg:w-0'} overflow-hidden flex flex-col`}>
+        <div className="p-4 border-b border-gray-100 dark:border-gray-800 min-w-72">
           <button onClick={() => selectChat(null)} className="w-full flex items-center justify-center gap-2 p-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors font-medium text-sm shadow-md shadow-blue-600/20">
             <Plus className="w-4 h-4" /> New Chat
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-3 min-w-72">
+        <div className="flex-1 overflow-y-auto p-3 min-w-72 dark:bg-gray-900">
           <div className="space-y-1.5">
             {chats.map((chat) => {
               // Extract the first user message safely (or default string)
@@ -164,16 +164,20 @@ export default function ChatPage() {
                 <button 
                   key={chat.id} 
                   onClick={() => selectChat(chat.id)}
-                  className={`w-full flex items-start gap-3 p-3 rounded-xl text-left transition-all duration-200 border ${currentChatId === chat.id ? 'bg-blue-50/80 border-blue-100 shadow-sm' : 'hover:bg-gray-50 border-transparent hover:border-gray-200'}`}
+                  className={`w-full flex items-start gap-3 p-3 rounded-xl text-left transition-all duration-200 border ${
+                    currentChatId === chat.id
+                      ? 'bg-blue-50/80 dark:bg-blue-900/30 border-blue-100 dark:border-blue-800 shadow-sm'
+                      : 'hover:bg-gray-50 dark:hover:bg-gray-800 border-transparent hover:border-gray-200 dark:hover:border-gray-700'
+                  }`}
                 >
-                  <div className={`mt-0.5 p-1.5 rounded-lg shadow-sm border ${currentChatId === chat.id ? 'bg-blue-600 border-blue-700 text-white' : 'bg-white border-gray-200 text-gray-500'}`}>
+                  <div className={`mt-0.5 p-1.5 rounded-lg shadow-sm border ${currentChatId === chat.id ? 'bg-blue-600 border-blue-700 text-white' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400'}`}>
                      <MessageSquare className="w-4 h-4" />
                   </div>
                   <div className="overflow-hidden flex-1 overflow-ellipsis">
-                    <div className={`text-sm font-medium w-full whitespace-nowrap overflow-hidden text-ellipsis ${currentChatId === chat.id ? 'text-blue-900' : 'text-gray-700'}`}>
+                    <div className={`text-sm font-medium w-full whitespace-nowrap overflow-hidden text-ellipsis ${currentChatId === chat.id ? 'text-blue-900 dark:text-blue-200' : 'text-gray-700 dark:text-gray-300'}`}>
                       {firstMsg}
                     </div>
-                    <div className={`text-[11px] mt-1 ${currentChatId === chat.id ? 'text-blue-600/70' : 'text-gray-400'}`}>
+                    <div className={`text-[11px] mt-1 ${currentChatId === chat.id ? 'text-blue-600/70 dark:text-blue-400/70' : 'text-gray-400 dark:text-gray-500'}`}>
                       {new Date(chat.updated_at).toLocaleDateString()}
                     </div>
                   </div>

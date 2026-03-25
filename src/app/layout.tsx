@@ -34,7 +34,11 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-gray-50">
+      <head>
+        {/* Prevent dark mode flash: apply class before hydration */}
+        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var t=localStorage.getItem('theme');if(t==='dark')document.documentElement.classList.add('dark');}catch(e){}})();` }} />
+      </head>
+      <body className="min-h-full flex flex-col bg-gray-50 dark:bg-gray-950">
         <HeaderNavbar />
         {children}
         <GlobalFooter />

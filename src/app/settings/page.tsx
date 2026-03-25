@@ -51,32 +51,32 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="flex-1 bg-gray-50 py-12 px-4 sm:px-6 lg:px-8 font-sans animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out fill-mode-both">
+    <div className="flex-1 bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8 font-sans animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out fill-mode-both">
       <div className="max-w-2xl mx-auto space-y-8">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Account Settings</h1>
-            <p className="mt-2 text-sm text-gray-500">Manage your Canvas API integration and personal account details.</p>
+            <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight">Account Settings</h1>
+            <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Manage your Canvas API integration and personal account details.</p>
           </div>
           <button
             onClick={() => router.back()}
             title="Close Settings"
-            className="mt-1 p-2 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-200 hover:scale-110 transition-all duration-200"
+            className="mt-1 p-2 rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-800 hover:scale-110 active:scale-95 transition-all duration-200"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="bg-white shadow-sm border border-gray-200 rounded-2xl overflow-hidden">
-          <div className="px-6 py-5 border-b border-gray-100 bg-gray-50/50">
-            <h3 className="text-lg font-semibold leading-6 text-gray-900">Profile Information</h3>
+        <div className="bg-white dark:bg-gray-900 shadow-sm border border-gray-200 dark:border-gray-800 rounded-2xl overflow-hidden">
+          <div className="px-6 py-5 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30">
+            <h3 className="text-lg font-semibold leading-6 text-gray-900 dark:text-white">Profile Information</h3>
           </div>
           <div className="px-6 py-6">
-            <label className="block text-sm font-semibold text-gray-700">Email Address</label>
-            <div className="mt-2 px-4 py-3 bg-gray-50 rounded-xl border border-gray-200 text-gray-600 font-medium text-sm">
-              {loading ? <span className="animate-pulse bg-gray-200 h-4 w-32 rounded inline-block"></span> : email}
+            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">Email Address</label>
+            <div className="mt-2 px-4 py-3 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 font-medium text-sm">
+              {loading ? <span className="animate-pulse bg-gray-200 dark:bg-gray-700 h-4 w-32 rounded inline-block"></span> : email}
             </div>
-            <p className="mt-2 text-xs text-gray-400">Your email is tied to your authentication identity.</p>
+            <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">Your email is tied to your authentication identity.</p>
           </div>
         </div>
 

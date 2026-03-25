@@ -118,7 +118,7 @@ function WelcomeScreen({ userEmail }: { userEmail?: string }) {
 
   return (
     <div className="flex flex-col items-center justify-center h-full text-center px-4 space-y-5 mt-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div className="w-20 h-20 rounded-2xl overflow-hidden shadow-lg border-2 border-blue-100">
+      <div className="w-20 h-20 rounded-2xl overflow-hidden">
         <img src="/agent-avatar.png" alt="Ask Canvas Agent" className="w-full h-full object-cover" />
       </div>
       <div className="space-y-2">
