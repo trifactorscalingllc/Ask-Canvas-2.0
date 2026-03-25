@@ -15,48 +15,71 @@ if (typeof window !== 'undefined') {
 
 /**
  * MermaidVisual renders a mermaid diagram from a code string.
+ * Optimized with React.memo to prevent freezing and redundant renders.
  */
-export function MermaidVisual({ chart }: { chart: string }) {
-  const containerRef = useRef<HTMLDivElement>(null)
+export const MermaidVisual = React.memo(({ chart }: { chart: string }) => {
   const [svg, setSvg] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
+  const [isProcessing, setIsProcessing] = useState(false)
 
   useEffect(() => {
     let isMounted = true;
+    
     async function render() {
       if (!chart || chart.trim().length === 0) return
+      setIsProcessing(true)
       
       try {
         const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`
-        // Pre-initialize ensure theme is correct
-        mermaid.initialize({ theme: 'dark', securityLevel: 'loose' })
-        const { svg: renderedSvg } = await mermaid.render(id, chart)
+        // Basic syntax check for very common AI hallucinations
+        let cleanedChart = chart.trim()
+        if (cleanedChart.startsWith('```mermaid')) cleanedChart = cleanedChart.replace('```mermaid', '').replace('```', '')
+
+        const { svg: renderedSvg } = await mermaid.render(id, cleanedChart)
         if (isMounted) {
           setSvg(renderedSvg)
           setError(null)
         }
       } catch (err: any) {
         console.error('Mermaid rendering error:', err)
-        if (isMounted) setError('Failed to render diagram. Syntax might be incomplete.')
+        if (isMounted) setError('Failed to render diagram. Syntax might be complex or incomplete.')
+      } finally {
+        if (isMounted) setIsProcessing(false)
       }
     }
+
     render()
     return () => { isMounted = false; }
   }, [chart])
 
   if (error) return <div className="text-xs text-red-400 bg-red-950/20 p-3 rounded-lg border border-red-900/50 my-2">{error}</div>
-  if (!svg && !error) return <div className="p-8 bg-gray-900/10 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 animate-pulse" />
+  
+  if (isProcessing && !svg) {
+    return (
+      <div className="w-full my-6 p-12 bg-gray-900/5 rounded-2xl border border-dashed border-gray-300 dark:border-gray-700 flex flex-col items-center gap-3 animate-pulse">
+        <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Rendering Visual Model...</span>
+      </div>
+    )
+  }
+
+  if (!svg) return null
 
   return (
-    <div className="w-full my-6 flex flex-col items-center gap-2">
+    <div className="w-full my-6 flex flex-col items-center gap-3 group">
       <div 
-        className="w-full bg-white dark:bg-gray-900 p-6 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm flex justify-center animate-in fade-in zoom-in duration-500 overflow-x-auto min-h-[100px]"
+        className="w-full bg-white dark:bg-gray-950 p-6 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm flex justify-center animate-in fade-in slide-in-from-bottom-2 duration-700 overflow-x-auto min-h-[100px] hover:border-blue-200 dark:hover:border-blue-900 transition-colors"
         dangerouslySetInnerHTML={{ __html: svg }}
       />
-      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Interactive Study Model</span>
+      <div className="flex items-center gap-2 opacity-40 group-hover:opacity-100 transition-opacity">
+        <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+        <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">Premium Study Model • Interactive</span>
+      </div>
     </div>
   )
-}
+})
+
+MermaidVisual.displayName = 'MermaidVisual'
 
 /**
  * FileEmbed renders a PDF or Google Slide iframe.

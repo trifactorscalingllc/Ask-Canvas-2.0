@@ -18,7 +18,7 @@ export default function ChatPage() {
   const [userEmail, setUserEmail] = useState<string | undefined>(undefined)
   const [userName, setUserName] = useState<string | undefined>(undefined)
   const [userAvatar, setUserAvatar] = useState<string | undefined>(undefined)
-  
+
   const supabase = createClient()
   const router = useRouter()
 
@@ -26,7 +26,7 @@ export default function ChatPage() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) return
     setUserEmail(session.user.email ?? undefined)
-    
+
     const [chatRes, userRes] = await Promise.all([
       supabase
         .from('chats')
@@ -39,7 +39,7 @@ export default function ChatPage() {
         .eq('id', session.user.id)
         .single()
     ])
-    
+
     if (chatRes.data) setChats(chatRes.data)
     if (userRes.data) {
       if (userRes.data.name) setUserName(userRes.data.name.split(' ')[0])
@@ -49,7 +49,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     fetchChats()
-    
+
     // Listen for the global Navbar toggle signal
     const handleToggle = () => setIsSidebarOpen(prev => !prev)
     window.addEventListener('toggleSidebar', handleToggle)
@@ -78,11 +78,11 @@ export default function ChatPage() {
 
   const sendMessage = async (e?: React.FormEvent, customPayload?: any) => {
     e?.preventDefault()
-    
+
     if (!input.trim() && !customPayload) return
 
     let payloadToSend: any = { messages: [], chatId: currentChatId }
-    
+
     if (!customPayload) {
       const userMsg: Message = { id: Date.now().toString(), role: 'user', content: input }
       setMessages(prev => [...prev, userMsg])
@@ -96,7 +96,7 @@ export default function ChatPage() {
     setPendingToolCall(null)
 
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 60000)
+    const timeoutId = setTimeout(() => controller.abort(), 120000)
 
     try {
       const res = await fetch('/api/chat', {
@@ -108,42 +108,63 @@ export default function ChatPage() {
 
       clearTimeout(timeoutId)
 
-      const contentType = res.headers.get('content-type')
-      let data: any = {}
-      if (contentType && contentType.includes('application/json')) {
-        data = await res.json()
-      } else {
-        const text = await res.text()
-        throw new Error(`Server returned non-JSON response: ${res.status} ${text.slice(0, 100)}`)
+      // ── JSON responses: errors and tool confirmations ──
+      const contentType = res.headers.get('content-type') ?? ''
+      if (contentType.includes('application/json')) {
+        const data = await res.json()
+        if (!res.ok || data.error) throw new Error(data.error || 'Server error.')
+        if (data.status === 'requires_confirmation') {
+          setPendingToolCall(data)
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: `**Confirmation Required:** I am about to execute \`${data.functionName}\` with the following arguments:\n\n\`\`\`json\n${JSON.stringify(data.arguments, null, 2)}\n\`\`\``
+          }])
+          return
+        }
+        if (data.content) {
+          setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: data.content }])
+        }
+        return
       }
 
-      if (!res.ok || data.error) {
-        throw new Error(data.error || 'The server responded with a fatal error.')
+      // ── Stream response: real-time token rendering ──
+      if (!res.body) throw new Error('No response stream received.')
+
+      // Read chatId from header before consuming body
+      const streamChatId = res.headers.get('x-chat-id')
+      if (streamChatId && !currentChatId) {
+        setCurrentChatId(streamChatId)
+        fetchChats()
       }
 
-      if (data.chatId && !currentChatId) {
-        setCurrentChatId(data.chatId)
-        fetchChats() // Refresh the sidebar
-      }
+      const newMsgId = Date.now().toString()
+      // Inject empty message immediately — tokens will fill it in
+      setMessages(prev => [...prev, { id: newMsgId, role: 'assistant', content: '' }])
+      setIsLoading(false) // Hide thinking dots — stream handles the "live" feel now
 
-      if (data.status === 'requires_confirmation') {
-        setPendingToolCall(data)
-        setMessages(prev => [...prev, {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: `**Confirmation Required:** I am about to execute \`${data.functionName}\` with the following arguments:\n\n\`\`\`json\n${JSON.stringify(data.arguments, null, 2)}\n\`\`\``
-        }])
-      } else if (data.content) {
-        setMessages(prev => [...prev, {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: data.content
-        }])
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        // Flush buffer to state on each chunk
+        const snapshot = buffer
+        setMessages(prev =>
+          prev.map(m => m.id === newMsgId ? { ...m, content: snapshot } : m)
+        )
       }
 
     } catch (err: any) {
-      console.error(err)
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: `🚨 **API Error:** ${err.message}` }])
+      if (err.name === 'AbortError') {
+        setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: '⏱️ **Request timed out.** The AI took too long to respond. Please try again.' }])
+      } else {
+        console.error(err)
+        setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: `🚨 **Error:** ${err.message}` }])
+      }
     } finally {
       setIsLoading(false)
     }
@@ -175,7 +196,7 @@ export default function ChatPage() {
 
   return (
     <div className="h-[calc(100vh-64px)] bg-gray-100 dark:bg-gray-950 flex flex-row relative overflow-hidden animate-in fade-in duration-500">
-      
+
       {/* Sidebar Drawer */}
       <div className={`absolute lg:static top-0 left-0 bg-white dark:bg-gray-900 shadow-2xl lg:shadow-none border-r ${isSidebarOpen ? 'border-gray-200 dark:border-gray-800' : 'border-transparent'} h-full z-40 transition-all duration-500 ease-out ${isSidebarOpen ? 'w-72 translate-x-0' : 'w-0 -translate-x-full lg:translate-x-0 lg:w-0'} overflow-hidden flex flex-col`}>
         <div className="p-4 border-b border-gray-100 dark:border-gray-800 min-w-72">
@@ -189,17 +210,16 @@ export default function ChatPage() {
               // Extract the first user message safely (or default string)
               const firstMsg = (chat.messages || []).find((m: any) => m.role === 'user')?.content || 'New Conversation';
               return (
-                <button 
-                  key={chat.id} 
+                <button
+                  key={chat.id}
                   onClick={() => selectChat(chat.id)}
-                  className={`w-full flex items-start gap-3 p-3 rounded-xl text-left transition-all duration-200 border ${
-                    currentChatId === chat.id
+                  className={`w-full flex items-start gap-3 p-3 rounded-xl text-left transition-all duration-200 border ${currentChatId === chat.id
                       ? 'bg-blue-50/80 dark:bg-blue-900/30 border-blue-100 dark:border-blue-800 shadow-sm'
                       : 'hover:bg-gray-50 dark:hover:bg-gray-800 border-transparent hover:border-gray-200 dark:hover:border-gray-700'
-                  }`}
+                    }`}
                 >
                   <div className={`mt-0.5 p-1.5 rounded-lg shadow-sm border ${currentChatId === chat.id ? 'bg-blue-600 border-blue-700 text-white' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400'}`}>
-                     <MessageSquare className="w-4 h-4" />
+                    <MessageSquare className="w-4 h-4" />
                   </div>
                   <div className="overflow-hidden flex-1 overflow-ellipsis">
                     <div className={`text-sm font-medium w-full whitespace-nowrap overflow-hidden text-ellipsis ${currentChatId === chat.id ? 'text-blue-900 dark:text-blue-200' : 'text-gray-700 dark:text-gray-300'}`}>
@@ -247,10 +267,10 @@ export default function ChatPage() {
           userAvatar={userAvatar}
         />
       </div>
-      
+
       {/* Mobile Overlay */}
       {isSidebarOpen && (
-        <div 
+        <div
           onClick={() => setIsSidebarOpen(false)}
           className="fixed inset-0 bg-black/20 z-30 lg:hidden animate-in fade-in duration-500"
         />

@@ -25,43 +25,16 @@ interface ChatInterfaceProps {
   userAvatar?: string;
 }
 
-// ── Typing animation hook ────────────────────────────────────────────────────
-function useTypedText(text: string, speed = 12) {
-  const [displayed, setDisplayed] = useState('');
-  const [done, setDone] = useState(false);
+// (Fake typing animation removed — real streaming replaces it)
 
-  useEffect(() => {
-    setDisplayed('');
-    setDone(false);
-    let i = 0;
-    const id = setInterval(() => {
-      if (i >= text.length) { clearInterval(id); setDone(true); return; }
-      setDisplayed(text.slice(0, i + 1));
-      i++;
-    }, speed);
-    return () => clearInterval(id);
-  }, [text, speed]);
-
-  return { displayed, done };
-}
-
-// ── AI message bubble with typing effect ────────────────────────────────────
-function AssistantBubble({ message, isLast, onFeedback, feedbackState }: {
+// ── AI message bubble ───────────────────────────────────────────────────────
+function AssistantBubble({ message, isLast, isStreaming, onFeedback, feedbackState }: {
   message: Message;
   isLast: boolean;
+  isStreaming?: boolean;  // true while this message is still being streamed
   onFeedback: (id: string, q: string, r: string, helpful: boolean) => void;
   feedbackState: Record<string, 'up' | 'down'>;
 }) {
-  const [prevMessages, setPrevMessages] = useState<string[]>([]);
-  const isNew = !prevMessages.includes(message.id);
-
-  useEffect(() => {
-    if (isNew) setPrevMessages(prev => [...prev, message.id]);
-  }, [message.id, isNew]);
-
-  const { displayed, done } = useTypedText(isNew ? message.content : message.content, isNew ? 6 : 0);
-  const shown = isNew ? displayed : message.content;
-
   return (
     <div className="flex justify-start gap-3 animate-in fade-in slide-in-from-left-3 duration-400">
       {/* Robot Avatar */}
@@ -77,13 +50,20 @@ function AssistantBubble({ message, isLast, onFeedback, feedbackState }: {
               code: ({ className, children, ...props }: any) => {
                 const match = /language-(\w+)/.exec(className || '')
                 const value = String(children).replace(/\n$/, '')
-                
-                // Only render Mermaid if the typing is DONE or the block is clearly closed
+
+                // Only render Mermaid once stream is done — prevents freeze/glitch
                 if (match && match[1] === 'mermaid') {
-                  if (isNew && !done) return <div className="p-4 bg-gray-900/10 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 animate-pulse text-xs text-gray-400">Generating Diagram...</div>
+                  if (isStreaming) {
+                    return (
+                      <div className="p-4 my-3 bg-gray-900/5 rounded-xl border border-dashed border-blue-200 dark:border-blue-900 flex items-center gap-3">
+                        <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                        <span className="text-xs font-medium text-blue-400">Preparing diagram...</span>
+                      </div>
+                    )
+                  }
                   return <MermaidVisual chart={value} />
                 }
-                
+
                 return (
                   <code className={className} {...props}>
                     {children}
@@ -91,17 +71,14 @@ function AssistantBubble({ message, isLast, onFeedback, feedbackState }: {
                 )
               },
               a: ({ href, children }) => {
-                // Check if it's a file embed request
                 if (href?.startsWith('embed:')) {
                   const actualUrl = href.replace('embed:', '')
                   return <FileEmbed url={actualUrl} title={String(children)} type="pdf" />
                 }
-                
-                // standard button link
                 return (
-                  <a 
-                    href={href} 
-                    target="_blank" 
+                  <a
+                    href={href}
+                    target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white !no-underline rounded-lg text-xs font-semibold transition-all hover:scale-[1.02] active:scale-95 shadow-sm my-1"
                   >
@@ -112,11 +89,12 @@ function AssistantBubble({ message, isLast, onFeedback, feedbackState }: {
               }
             }}
           >
-            {shown}
+            {message.content}
           </ReactMarkdown>
-          {isNew && !done && <span className="inline-block w-1 h-4 bg-blue-500 ml-0.5 animate-pulse align-middle" />}
+          {/* Live stream cursor */}
+          {isStreaming && <span className="inline-block w-0.5 h-4 bg-blue-500 ml-0.5 animate-pulse align-middle rounded-full" />}
         </div>
-        {isLast && done && (
+        {isLast && !isStreaming && (
           <div className="flex items-center space-x-2 pt-2 mt-2 border-t border-gray-200/50 dark:border-gray-700 justify-end opacity-80">
             <button
               onClick={() => onFeedback(message.id, '', message.content, true)}
@@ -227,7 +205,7 @@ export function ChatInterface({
                   : `Welcome back 👋\n\nI'm your **Ask Canvas** AI agent. Ask me anything about your courses, grades, assignments, or upcoming deadlines.`
               }}
               isLast={false}
-              onFeedback={() => {}}
+              onFeedback={() => { }}
               feedbackState={{}}
             />
           ) : (
@@ -242,6 +220,7 @@ export function ChatInterface({
                     key={message.id}
                     message={{ ...message, content: cleaned }}
                     isLast={isLast}
+                    isStreaming={isLast && isLoading}
                     onFeedback={handleFeedback}
                     feedbackState={feedbackState}
                   />

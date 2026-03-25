@@ -164,9 +164,9 @@ export async function POST(req: Request) {
 
     let canvasKey = ''
     try {
-       canvasKey = decrypt(userData.encrypted_canvas_key, userData.iv)
+      canvasKey = decrypt(userData.encrypted_canvas_key, userData.iv)
     } catch {
-       return NextResponse.json({ error: 'Decryption failed' }, { status: 500 })
+      return NextResponse.json({ error: 'Decryption failed' }, { status: 500 })
     }
 
     // Lazy Hydration of Cold Data & Profile
@@ -195,7 +195,7 @@ export async function POST(req: Request) {
     }
 
     let history: any[] = []
-    
+
     if (chatId) {
       const { data: chatData } = await supabase
         .from('chats')
@@ -205,7 +205,7 @@ export async function POST(req: Request) {
         .maybeSingle()
       history = Array.isArray(chatData?.messages) ? chatData?.messages : []
     }
-    
+
     if (incomingMessages && incomingMessages.length > 0) {
       const newMsg = incomingMessages[incomingMessages.length - 1]
       if (newMsg.role === 'user') {
@@ -214,8 +214,8 @@ export async function POST(req: Request) {
     }
 
     if (toolResult && pendingToolCall) {
-       history.push(pendingToolCall)
-       history.push(toolResult)
+      history.push(pendingToolCall)
+      history.push(toolResult)
     }
 
     // [New Architecture] Save the User's exact prompt to the Database FIRST!
@@ -311,7 +311,7 @@ INSTRUCTIONS FOR DATA ACCESS:
 
       // Check if we have tool calls to process
       if (currentMessage.tool_calls && currentMessage.tool_calls.length > 0) {
-        
+
         // Handle Confirmation-Required Tools (post_...) - These break the loop immediately
         const postCall = currentMessage.tool_calls.find((tc: any) => tc.function.name.startsWith('post_'))
         if (postCall) {
@@ -355,8 +355,8 @@ INSTRUCTIONS FOR DATA ACCESS:
               resultString = "Tool not implemented."
             }
           } catch (err: any) {
-            resultString = err.message === '401_UNAUTHORIZED' 
-              ? "Your Canvas API key is invalid or expired." 
+            resultString = err.message === '401_UNAUTHORIZED'
+              ? "Your Canvas API key is invalid or expired."
               : `Canvas API error: ${err.message}`
           }
 
@@ -408,16 +408,64 @@ INSTRUCTIONS FOR DATA ACCESS:
       }
     }
 
-    // Final Save and Return
-    history.push(currentMessage)
-    const finalChatId = await saveHistory(supabase, user.id, history, activeChatId)
-    return NextResponse.json({ ...currentMessage, chatId: finalChatId })
+    // ── Final Streaming Response ──────────────────────────────────────────────
+    // Tool loop is done. Now stream the final text response token-by-token.
+    const streamResponse = await openai.chat.completions.create({
+      model: 'qwen-3-235b-a22b-instruct-2507',
+      stream: true,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        ...history.slice(-15).map((m: any) => ({
+          role: m.role,
+          content: m.content || '',
+          tool_calls: m.tool_calls,
+          tool_call_id: m.tool_call_id,
+          name: m.name
+        }))
+      ]
+    })
+
+    // Build + stream simultaneously
+    let assembled = ''
+
+    const readable = new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder()
+
+        try {
+          for await (const chunk of streamResponse) {
+            const token = chunk.choices[0]?.delta?.content ?? ''
+            if (token) {
+              assembled += token
+              controller.enqueue(encoder.encode(token))
+            }
+          }
+        } catch (streamErr) {
+          console.error('Stream error:', streamErr)
+        } finally {
+          // Save full assembled message to Supabase after stream ends
+          const finalMsg = { role: 'assistant', content: assembled }
+          history.push(finalMsg)
+          await saveHistory(supabase, user.id, history, activeChatId)
+          controller.close()
+        }
+      }
+    })
+
+    return new Response(readable, {
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'X-Chat-Id': activeChatId ?? '',
+        'Cache-Control': 'no-cache',
+        'X-Accel-Buffering': 'no',
+      }
+    })
 
   } catch (err: any) {
     console.error('API Error:', err)
     const status = err.status || 500
-    const message = err.status === 429 
-      ? "Wait, the AI engine is a bit busy! (429 Rate Limit). Please try again in 5 seconds." 
+    const message = err.status === 429
+      ? "The AI engine is a bit busy right now. Please try again in a few seconds."
       : err.message
     return NextResponse.json({ error: message }, { status })
   }
