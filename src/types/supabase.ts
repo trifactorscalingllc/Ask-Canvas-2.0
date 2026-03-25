@@ -1,4 +1,4 @@
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -46,6 +46,33 @@ export type Database = {
           },
         ]
       }
+      feedback: {
+        Row: {
+          created_at: string | null
+          id: string
+          is_helpful: boolean
+          query: string
+          response: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          is_helpful: boolean
+          query: string
+          response: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          is_helpful?: boolean
+          query?: string
+          response?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       proposed_tools: {
         Row: {
           created_at: string | null
@@ -78,9 +105,42 @@ export type Database = {
           },
         ]
       }
+      user_memories: {
+        Row: {
+          created_at: string
+          id: string
+          memory_text: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          memory_text: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          memory_text?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_memories_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       users: {
         Row: {
           avatar_url: string | null
+          canvas_cache: Json | null
           created_at: string | null
           email: string
           encrypted_canvas_key: string | null
@@ -90,6 +150,7 @@ export type Database = {
         }
         Insert: {
           avatar_url?: string | null
+          canvas_cache?: Json | null
           created_at?: string | null
           email: string
           encrypted_canvas_key?: string | null
@@ -99,6 +160,7 @@ export type Database = {
         }
         Update: {
           avatar_url?: string | null
+          canvas_cache?: Json | null
           created_at?: string | null
           email?: string
           encrypted_canvas_key?: string | null
@@ -246,3 +308,4 @@ export const Constants = {
     Enums: {},
   },
 } as const
+

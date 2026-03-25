@@ -90,6 +90,20 @@ const tools = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'save_user_memory',
+      description: 'Save a learned fact or preference about the user (e.g. "User is an Econ major", "User prefers studying at night") to provide personalized responses in the future.',
+      parameters: {
+        type: 'object',
+        properties: {
+          preference_text: { type: 'string', description: 'The fact or preference to remember' },
+        },
+        required: ['preference_text'],
+      },
+    },
+  },
 ]
 
 export async function POST(req: Request) {
@@ -110,9 +124,14 @@ export async function POST(req: Request) {
 
     const { data: userData, error: userError } = await supabase
       .from('users')
-      .select('encrypted_canvas_key, iv')
+      .select('encrypted_canvas_key, iv, canvas_cache')
       .eq('id', user.id)
       .single()
+
+    const { data: memories } = await supabase
+      .from('user_memories')
+      .select('memory_text')
+      .eq('user_id', user.id)
 
     if (userError || !userData || !userData.encrypted_canvas_key || !userData.iv) {
       return NextResponse.json({ error: 'User setup incomplete or Canvas key missing' }, { status: 400 })
@@ -123,6 +142,17 @@ export async function POST(req: Request) {
        canvasKey = decrypt(userData.encrypted_canvas_key, userData.iv)
     } catch {
        return NextResponse.json({ error: 'Decryption failed' }, { status: 500 })
+    }
+
+    // Lazy Hydration of Cold Data
+    if (!userData.canvas_cache) {
+      try {
+        const courses = await get_active_courses(canvasKey)
+        await supabase.from('users').update({ canvas_cache: courses }).eq('id', user.id)
+        userData.canvas_cache = courses
+      } catch (e) {
+        console.error('Failed to lazy-hydrate canvas cache', e)
+      }
     }
 
     let history: any[] = []
@@ -158,11 +188,15 @@ export async function POST(req: Request) {
 
 TOOL ROUTING RULES (follow exactly):
 - schedule/upcoming/due this week/next week/any assignment list -> call get_all_upcoming_assignments immediately. It handles everything internally.
-- specific course assignments or grades -> YOU MUST call get_active_courses FIRST to find the exact numeric course_id. DO NOT GUESS course_ids like "STAT200". Canvas requires the exact numeric ID.
+- specific course assignments or grades -> Use the KNOWN USER CONTEXT below for the exact numeric course_id. Do NOT invent IDs. If the Known Active Courses list says "Unknown", then YOU MUST call get_active_courses FIRST.
 - missing features (announcements, inbox, syllabus, calendar, messaging) -> YOU MUST call log_missing_tool to record the gap. DO NOT just apologize.
 - list courses -> call get_active_courses.
 - NEVER invent tool names. Use only the OpenAI tool_calls API. No XML tags.
-- Format responses as clean markdown. Today: ${new Date().toDateString()}.`
+- Format responses as clean markdown. Today: ${new Date().toDateString()}.
+
+[KNOWN USER CONTEXT]
+Active Courses (Canvas ID Mapping): ${userData.canvas_cache ? JSON.stringify(userData.canvas_cache) : "Unknown (call get_active_courses)"}
+User Preferences/Memories: ${memories?.length ? memories.map(m => m.memory_text).join('; ') : "None"}`
 
     let response;
     try {
@@ -195,10 +229,17 @@ TOOL ROUTING RULES (follow exactly):
       const { name, arguments: argsString } = toolCall.function
       const args = JSON.parse(argsString || '{}')
 
-      if (name.startsWith('get_')) {
+      if (name.startsWith('get_') || name === 'save_user_memory') {
         let resultString = '';
         try {
-          if (name === 'get_active_courses') {
+          if (name === 'save_user_memory') {
+            const { error } = await supabase.from('user_memories').insert({
+              user_id: user.id,
+              memory_text: args.preference_text
+            })
+            if (error) throw new Error(error.message)
+            resultString = "Memory saved successfully."
+          } else if (name === 'get_active_courses') {
             const courses = await get_active_courses(canvasKey);
             resultString = JSON.stringify(courses);
           } else if (name === 'get_current_grades') {
