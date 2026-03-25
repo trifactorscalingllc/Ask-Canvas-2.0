@@ -128,8 +128,8 @@ export default function LandingPage() {
                         style={{ animationDelay: `${i * 0.4}s` }}
                       >
                         {msg.type === 'ai' && (
-                          <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
-                            <Sparkles className="w-3.5 h-3.5 text-[#004ac6]" />
+                          <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 shadow-sm border border-blue-100">
+                            <img src="/agent-avatar.png" alt="Agent" className="w-full h-full object-cover" />
                           </div>
                         )}
                         {msg.guide ? (
