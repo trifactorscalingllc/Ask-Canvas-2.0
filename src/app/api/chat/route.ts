@@ -35,16 +35,21 @@ function getSupabaseService() {
 async function logError(opts: { userId?: string, userPrompt?: string, agentResponse?: string, err: any }) {
   try {
     const service = getSupabaseService()
+    const msg = String(opts.err?.message ?? opts.err ?? '')
+    console.error(`[DIAGNOSTIC LOG]: ${msg}`)
+
     if (!service) return
     await service.from('error_logs').insert({
       user_id: opts.userId ?? null,
       user_prompt: opts.userPrompt ?? null,
       agent_response: opts.agentResponse ?? null,
-      error_type: 'runtime_error',
-      error_message: String(opts.err?.message ?? opts.err ?? '').slice(0, 2000),
-      problem_identifier: 'Runtime error categorized by system logger.'
+      error_type: msg.toLowerCase().includes('timeout') ? 'timeout' : 'runtime_error',
+      error_message: msg.slice(0, 2000),
+      problem_identifier: msg.toLowerCase().includes('timeout') ? 'Vercel/Network Timeout' : 'Internal processing error'
     })
-  } catch { }
+  } catch (e) {
+    console.error('Logging failed:', e)
+  }
 }
 
 const tools = [
@@ -101,7 +106,7 @@ export async function POST(req: Request) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await req.json()
-    const { messages: incoming, pendingToolCall, toolResult, chatId } = body
+    const { messages: incoming, chatId } = body
 
     const { data: userData } = await supabase.from('users').select('*').eq('id', user.id).single()
     if (!userData || !userData.encrypted_canvas_key || !userData.iv) {
@@ -119,7 +124,6 @@ export async function POST(req: Request) {
       const nm = incoming[incoming.length - 1]
       if (nm.role === 'user') { history.push(nm); lastPrompt = nm.content || ''; }
     }
-    if (toolResult && pendingToolCall) { history.push(pendingToolCall); history.push(toolResult); }
 
     const activeChatId = await saveHistory(supabase, user.id, history, chatId)
 
@@ -128,9 +132,11 @@ export async function POST(req: Request) {
       async start(controller) {
         const send = (txt: string) => controller.enqueue(encoder.encode(txt))
         let assembled = ''
+        let heartbeat: any = null
 
         try {
-          send("Thinking...")
+          // Heartbeat character (Zero Width Space) to keep connection alive
+          heartbeat = setInterval(() => { send("\u200B") }, 4000)
 
           const isGrade = /grade|score|how am i doing|classes/.test(lastPrompt.toLowerCase())
           const isAssign = /assignment|due|upcoming|exam|test|quiz|econ|syllabus/.test(lastPrompt.toLowerCase())
@@ -141,8 +147,6 @@ export async function POST(req: Request) {
             isAssign ? get_all_upcoming_assignments(canvasKey, userData.canvas_cache as any) : Promise.resolve(null)
           ])
 
-          if (pGrades || pAssigns) send("\n(Accessed Canvas records)")
-
           const systemPrompt = `You are the "Ask Canvas" Assistant.
 [CONTEXT]
 Name: ${userData.name || "Student"}
@@ -150,10 +154,11 @@ Courses: ${JSON.stringify(userData.canvas_cache || [])}
 Pre-fetched Grades: ${JSON.stringify(pGrades || "None")}
 Pre-fetched Assignments: ${JSON.stringify(pAssigns || "None")}
 Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
-[RULES]
-- If data is in context, answer IMMEDIATELY.
-- Use Mermaid diagrams for complex concepts.
-- Use H2 structure for long responses.`
+[STRICT FORMATTING]
+1. Use standard Markdown tables for data.
+2. Mermaid diagrams MUST start with "Here is a visual model:" followed by two newlines and the code block.
+3. NEVER repeat "Thinking..." or "Syncing..." in your final output.
+4. Keep responses professional and academic.`
 
           let currentHistory = [...history.slice(-10)]
           let iterations = 0
@@ -194,22 +199,19 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
             turnToolCalls = turnToolCalls.filter(Boolean)
 
             if (turnToolCalls.length > 0) {
-              send("\n(Syncing with Canvas...)")
-
               const results = await Promise.all(turnToolCalls.map(async (tc: any) => {
                 const name = tc.function.name
                 const args = JSON.parse(tc.function.arguments || '{}')
-                let res = ''
                 try {
-                  if (name === 'get_all_grades') res = JSON.stringify(await get_all_grades(canvasKey))
-                  else if (name === 'get_all_upcoming_assignments') res = JSON.stringify(await get_all_upcoming_assignments(canvasKey, userData.canvas_cache as any))
-                  else if (name === 'get_assignment_details') res = JSON.stringify(await get_assignment_details(canvasKey, args.course_id, args.assignment_id))
-                  else if (name === 'save_user_memory') {
+                  if (name === 'get_all_grades') return { role: 'tool', tool_call_id: tc.id, name, content: JSON.stringify(await get_all_grades(canvasKey)) }
+                  if (name === 'get_all_upcoming_assignments') return { role: 'tool', tool_call_id: tc.id, name, content: JSON.stringify(await get_all_upcoming_assignments(canvasKey, userData.canvas_cache as any)) }
+                  if (name === 'get_assignment_details') return { role: 'tool', tool_call_id: tc.id, name, content: JSON.stringify(await get_assignment_details(canvasKey, args.course_id, args.assignment_id)) }
+                  if (name === 'save_user_memory') {
                     await supabase.from('user_memories').insert({ user_id: user.id, memory_text: args.preference_text })
-                    res = "Stored."
+                    return { role: 'tool', tool_call_id: tc.id, name, content: "Stored." }
                   }
-                } catch { res = "Canvas API error." }
-                return { role: 'tool', tool_call_id: tc.id, name, content: res }
+                } catch { return { role: 'tool', tool_call_id: tc.id, name, content: "Error." } }
+                return { role: 'tool', tool_call_id: tc.id, name, content: "N/A" }
               }))
 
               const assistantMsg = { role: 'assistant', content: turnText || null, tool_calls: turnToolCalls }
@@ -227,9 +229,11 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
           await saveHistory(supabase, user.id, history, activeChatId)
 
         } catch (err: any) {
-          send("\n\n[Connection Timeout]. Please refresh.")
+          const timeoutMsg = "\n\n[Connection Stress]. The last part of the response may be missing, but it has been saved to your history. Please refresh the page if this persists."
+          send(timeoutMsg)
           await logError({ userId: user?.id, userPrompt: lastPrompt, err })
         } finally {
+          if (heartbeat) clearInterval(heartbeat)
           controller.close()
         }
       }
