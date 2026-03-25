@@ -7,12 +7,8 @@ import { decrypt } from '@/lib/crypto'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 import {
-  get_active_courses,
-  get_current_grades,
   get_all_grades,
-  get_upcoming_assignments,
   get_all_upcoming_assignments,
-  get_user_profile,
   get_assignment_details
 } from '@/lib/canvas-tools'
 
@@ -27,19 +23,26 @@ function getSupabaseService() {
   if (_supabaseService) return _supabaseService
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return null
+  if (!url || !key) {
+    console.error("CRITICAL: SUPABASE_SERVICE_ROLE_KEY is missing from environment.")
+    return null
+  }
   _supabaseService = createServiceClient(url, key)
   return _supabaseService
 }
 
 async function logError(opts: { userId?: string, userPrompt?: string, agentResponse?: string, err: any }) {
   try {
-    const service = getSupabaseService()
     const msg = String(opts.err?.message ?? opts.err ?? '')
     console.error(`[DIAGNOSTIC LOG]: ${msg}`)
 
-    if (!service) return
-    await service.from('error_logs').insert({
+    const service = getSupabaseService()
+    if (!service) {
+      console.error("Logging aborted: No service client available.")
+      return
+    }
+
+    const { error } = await service.from('error_logs').insert({
       user_id: opts.userId ?? null,
       user_prompt: opts.userPrompt ?? null,
       agent_response: opts.agentResponse ?? null,
@@ -47,8 +50,9 @@ async function logError(opts: { userId?: string, userPrompt?: string, agentRespo
       error_message: msg.slice(0, 2000),
       problem_identifier: msg.toLowerCase().includes('timeout') ? 'Vercel/Network Timeout' : 'Internal processing error'
     })
+    if (error) console.error("Supabase Insert Error:", error)
   } catch (e) {
-    console.error('Logging failed:', e)
+    console.error('Fatal Logging failure:', e)
   }
 }
 
@@ -131,12 +135,11 @@ export async function POST(req: Request) {
     const readable = new ReadableStream({
       async start(controller) {
         const send = (txt: string) => controller.enqueue(encoder.encode(txt))
-        let assembled = ''
         let heartbeat: any = null
 
         try {
-          // Heartbeat character (Zero Width Space) to keep connection alive
-          heartbeat = setInterval(() => { send("\u200B") }, 4000)
+          // Send thinking pulse and start an interval that ONLY runs while LLM is NOT streaming
+          send("Thinking...")
 
           const isGrade = /grade|score|how am i doing|classes/.test(lastPrompt.toLowerCase())
           const isAssign = /assignment|due|upcoming|exam|test|quiz|econ|syllabus/.test(lastPrompt.toLowerCase())
@@ -155,16 +158,15 @@ Pre-fetched Grades: ${JSON.stringify(pGrades || "None")}
 Pre-fetched Assignments: ${JSON.stringify(pAssigns || "None")}
 Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
 [STRICT FORMATTING]
-1. Use standard Markdown tables for data.
-2. Mermaid diagrams MUST start with "Here is a visual model:" followed by two newlines and the code block.
-3. NEVER repeat "Thinking..." or "Syncing..." in your final output.
-4. Keep responses professional and academic.`
+1. Mermaid graphs MUST be in their own \` \` \`mermaid block with no text on the same line.
+2. If rendering a table, ensure the header row is clearly defined.
+3. Keep tokens flowing.`
 
           let currentHistory = [...history.slice(-10)]
           let iterations = 0
           let loopFinished = false
 
-          while (iterations < 5 && !loopFinished) {
+          while (iterations < 3 && !loopFinished) { // Reduced to 3 to stay within 60s
             iterations++
 
             const turnStream = await openai.chat.completions.create({
@@ -181,6 +183,9 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
             for await (const chunk of turnStream) {
               const delta = chunk.choices[0]?.delta as any
               if (delta.content) {
+                // IMPORTANT: Stop any heartbeat while we are receiving real tokens to avoid corruption
+                if (heartbeat) { clearInterval(heartbeat); heartbeat = null; }
+
                 turnText += delta.content
                 send(delta.content)
               }
@@ -199,6 +204,11 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
             turnToolCalls = turnToolCalls.filter(Boolean)
 
             if (turnToolCalls.length > 0) {
+              // LLM finished but is waiting for tool results. START HEARTBEAT NOW.
+              if (!heartbeat) {
+                heartbeat = setInterval(() => { send("\u200B") }, 3000)
+              }
+
               const results = await Promise.all(turnToolCalls.map(async (tc: any) => {
                 const name = tc.function.name
                 const args = JSON.parse(tc.function.arguments || '{}')
@@ -221,16 +231,14 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
               await saveHistory(supabase, user.id, currentHistory, activeChatId)
             } else {
               loopFinished = true
-              assembled = turnText
             }
           }
 
-          history.push({ role: 'assistant', content: assembled })
+          history.push({ role: 'assistant', content: turnText })
           await saveHistory(supabase, user.id, history, activeChatId)
 
         } catch (err: any) {
-          const timeoutMsg = "\n\n[Connection Stress]. The last part of the response may be missing, but it has been saved to your history. Please refresh the page if this persists."
-          send(timeoutMsg)
+          send("\n\n(Connection Stress) The network is busy. I've saved the partial response to your chat history. Please refresh.")
           await logError({ userId: user?.id, userPrompt: lastPrompt, err })
         } finally {
           if (heartbeat) clearInterval(heartbeat)
