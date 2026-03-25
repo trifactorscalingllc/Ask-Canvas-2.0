@@ -144,10 +144,10 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-64px)] bg-gray-100 flex flex-row relative overflow-hidden">
+    <div className="h-[calc(100vh-64px)] bg-gray-100 flex flex-row relative overflow-hidden animate-in fade-in duration-500">
       
       {/* Sidebar Drawer */}
-      <div className={`absolute lg:static top-0 left-0 bg-white shadow-xl lg:shadow-none border-r border-gray-200 h-full z-40 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-72 translate-x-0' : 'w-0 -translate-x-full lg:w-0 lg:hidden'} overflow-hidden flex flex-col`}>
+      <div className={`absolute lg:static top-0 left-0 bg-white shadow-2xl lg:shadow-none border-r ${isSidebarOpen ? 'border-gray-200' : 'border-transparent'} h-full z-40 transition-all duration-500 ease-out ${isSidebarOpen ? 'w-72 translate-x-0' : 'w-0 -translate-x-full lg:translate-x-0 lg:w-0'} overflow-hidden flex flex-col`}>
         <div className="p-4 border-b border-gray-100 min-w-72">
           <button onClick={() => selectChat(null)} className="w-full flex items-center justify-center gap-2 p-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors font-medium text-sm shadow-md shadow-blue-600/20">
             <Plus className="w-4 h-4" /> New Chat
@@ -215,7 +215,7 @@ export default function ChatPage() {
       {isSidebarOpen && (
         <div 
           onClick={() => setIsSidebarOpen(false)}
-          className="fixed inset-0 bg-black/20 z-30 lg:hidden animate-in fade-in"
+          className="fixed inset-0 bg-black/20 z-30 lg:hidden animate-in fade-in duration-500"
         />
       )}
     </div>

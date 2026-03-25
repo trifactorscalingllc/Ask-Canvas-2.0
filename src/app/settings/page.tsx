@@ -38,7 +38,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="flex-1 bg-gray-50 py-12 px-4 sm:px-6 lg:px-8 font-sans">
+    <div className="flex-1 bg-gray-50 py-12 px-4 sm:px-6 lg:px-8 font-sans animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out fill-mode-both">
       <div className="max-w-2xl mx-auto space-y-8">
         <div>
           <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Account Settings</h1>
