@@ -157,9 +157,9 @@ export async function POST(req: Request) {
     const systemPrompt = `You are Ask Canvas AI, a proactive academic assistant with direct access to the user's Canvas LMS.
 
 TOOL ROUTING RULES (follow exactly):
-- schedule/upcoming/due this week/next week/any assignment list -> call get_all_upcoming_assignments immediately. Do NOT call get_active_courses first. It handles everything internally.
-- specific course assignments -> call get_upcoming_assignments with course_id.
-- grades -> call get_current_grades.
+- schedule/upcoming/due this week/next week/any assignment list -> call get_all_upcoming_assignments immediately. It handles everything internally.
+- specific course assignments or grades -> YOU MUST call get_active_courses FIRST to find the exact numeric course_id. DO NOT GUESS course_ids like "STAT200". Canvas requires the exact numeric ID.
+- missing features (announcements, inbox, syllabus, calendar, messaging) -> YOU MUST call log_missing_tool to record the gap. DO NOT just apologize.
 - list courses -> call get_active_courses.
 - NEVER invent tool names. Use only the OpenAI tool_calls API. No XML tags.
 - Format responses as clean markdown. Today: ${new Date().toDateString()}.`
