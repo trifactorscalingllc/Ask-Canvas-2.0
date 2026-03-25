@@ -1,9 +1,15 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+// Lazy client to prevent build-time errors
+let _supabase: any = null;
+function getSupabase() {
+    if (_supabase) return _supabase;
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) return null;
+    _supabase = createClient(url, key);
+    return _supabase;
+}
 
 export async function updateModelAvailability(token: string) {
     try {
@@ -13,6 +19,9 @@ export async function updateModelAvailability(token: string) {
             }
         });
         const data = await response.json();
+
+        const supabase = getSupabase();
+        if (!supabase) return data;
 
         const { error } = await supabase.from('system_status').upsert({
             key: 'cerebras_models',
@@ -44,6 +53,9 @@ export async function updateRateLimits(headers: Headers) {
     };
 
     try {
+        const supabase = getSupabase();
+        if (!supabase) return;
+
         const { error } = await supabase.from('system_status').upsert({
             key: 'cerebras_rate_limits',
             value: limits,
@@ -58,6 +70,7 @@ export async function updateRateLimits(headers: Headers) {
 
 export async function getProviderStatus() {
     try {
+        const supabase = getSupabase();
         if (!supabase) return null;
         const { data, error } = await supabase.from('system_status').select('*');
         if (error) {

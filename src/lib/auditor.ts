@@ -1,14 +1,29 @@
 import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-const auditorAi = new OpenAI({
-    baseURL: 'https://api.cerebras.ai/v1',
-    apiKey: process.env.CEREBRAS_API_KEY || 'dummy_key',
-});
+// Lazy clients to prevent build-time errors
+let _supabase: any = null;
+let _auditorAi: OpenAI | null = null;
+
+function getSupabase() {
+    if (_supabase) return _supabase;
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) return null;
+    _supabase = createClient(url, key);
+    return _supabase;
+}
+
+function getAuditorAi() {
+    if (_auditorAi) return _auditorAi;
+    const key = process.env.CEREBRAS_API_KEY;
+    if (!key) return null;
+    _auditorAi = new OpenAI({
+        baseURL: 'https://api.cerebras.ai/v1',
+        apiKey: key,
+    });
+    return _auditorAi;
+}
 
 export async function gradeResponse(opts: {
     userId?: string;
@@ -50,14 +65,16 @@ Response ONLY with JSON:
         return null;
     }
 
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = getSupabase();
+    const auditorAi = getAuditorAi();
+
+    if (!supabase || !auditorAi) {
+        console.error('[AUDITOR] CRITICAL: Failed to initialize clients.');
+        return null;
+    }
 
     try {
         console.log(`[AUDITOR] Auditing response for student: ${userId}`);
-
-        if (!process.env.CEREBRAS_API_KEY) {
-            console.error('[AUDITOR] CRITICAL: CEREBRAS_API_KEY is missing from environment.');
-        }
 
         const response = await auditorAi.chat.completions.create({
             model: 'qwen-3-235b-a22b-instruct-2507', // Using correct model name from user's route.ts
@@ -91,7 +108,7 @@ Response ONLY with JSON:
                 const lastMsg = updatedMessages[updatedMessages.length - 1];
                 if (lastMsg && lastMsg.role === 'assistant') {
                     // Still save to metadata for future internal analysis, just not displayed in UI
-                    lastMsg.audit = auditResult;
+                    (lastMsg as any).audit = auditResult;
                     await supabase.from('chats').update({ messages: updatedMessages, updated_at: new Date().toISOString() }).eq('id', chatId);
                 }
             }
