@@ -59,3 +59,39 @@ export async function get_upcoming_assignments(token: string, course_id: string)
 
   return mapped.slice(0, 10);
 }
+
+/**
+ * Fetches assignments across ALL active courses in parallel.
+ * Returns a flat list sorted by due date, limited to the next 30 upcoming items.
+ */
+export async function get_all_upcoming_assignments(token: string) {
+  const courses = await get_active_courses(token);
+
+  const results = await Promise.allSettled(
+    courses.map(async (course: any) => {
+      try {
+        const data = await fetchCanvas(
+          `/api/v1/courses/${course.id}/assignments?bucket=upcoming&per_page=10`,
+          token
+        );
+        if (!Array.isArray(data)) return [];
+        return data.map((a: any) => ({
+          course: course.name,
+          name: a.name,
+          due_at: a.due_at,
+          points_possible: a.points_possible,
+        }));
+      } catch {
+        return [];
+      }
+    })
+  );
+
+  const all = results
+    .filter((r) => r.status === 'fulfilled')
+    .flatMap((r: any) => r.value)
+    .filter((a: any) => a.due_at)
+    .sort((a: any, b: any) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime());
+
+  return all.slice(0, 30);
+}

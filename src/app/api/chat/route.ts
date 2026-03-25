@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { createClient } from '@/lib/supabase/server'
 import { decrypt } from '@/lib/crypto'
-import { get_active_courses, get_current_grades, get_upcoming_assignments } from '@/lib/canvas-tools'
+import { get_active_courses, get_current_grades, get_upcoming_assignments, get_all_upcoming_assignments } from '@/lib/canvas-tools'
 
 const openai = new OpenAI({
   baseURL: 'https://api.cerebras.ai/v1',
@@ -50,6 +50,14 @@ const tools = [
         },
         required: ['course_id']
       },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_all_upcoming_assignments',
+      description: 'Fetch ALL upcoming assignments across ALL of the user\'s courses in one call. Use this whenever the user asks about their schedule, upcoming deadlines, what is due soon, or due this/next week.',
+      parameters: { type: 'object', properties: {} },
     },
   },
   {
@@ -151,7 +159,15 @@ export async function POST(req: Request) {
       response = await openai.chat.completions.create({
         model: 'qwen-3-235b-a22b-instruct-2507',
         messages: [
-          { role: 'system', content: 'You are Ask Canvas 2.0, an AI assistant for Canvas LMS. Use the provided tools to answer questions. IMPORTANT: Never use <tool_call> or <tool_response> XML tags — only use the structured tool_calls API. When presenting results to the user, format them cleanly using markdown lists or tables. Be concise and friendly.' },
+          { role: 'system', content: `You are Ask Canvas AI, a proactive academic assistant. You have direct access to the user's Canvas LMS data.
+
+Rules:
+- When a user asks about their "schedule", "what is due", "assignments for this/next week", or anything similar: IMMEDIATELY call get_all_upcoming_assignments — do not hedge or warn the user first.
+- When a user asks about a specific course's assignments, use get_upcoming_assignments with that course_id.
+- When asked about grades, use get_current_grades. When asked what courses they have, use get_active_courses.
+- Always format responses as clean markdown with bolded course names and due dates.
+- Never use <tool_call> or <tool_response> XML tags. Use only the structured tool_calls API.
+- Today's date is ${new Date().toDateString()}.` },
           ...recentHistory.map((m: any) => ({
             role: m.role,
             content: m.content || '',
@@ -186,6 +202,9 @@ export async function POST(req: Request) {
           } else if (name === 'get_current_grades') {
             const grades = await get_current_grades(canvasKey, args.course_id);
             resultString = JSON.stringify(grades);
+          } else if (name === 'get_all_upcoming_assignments') {
+            const assignments = await get_all_upcoming_assignments(canvasKey);
+            resultString = JSON.stringify(assignments);
           } else if (name === 'get_upcoming_assignments') {
             const assignments = await get_upcoming_assignments(canvasKey, args.course_id);
             resultString = JSON.stringify(assignments);
