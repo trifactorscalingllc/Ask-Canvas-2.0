@@ -6,8 +6,14 @@ import { get_active_courses, get_current_grades, get_upcoming_assignments } from
 
 const openai = new OpenAI({
   baseURL: 'https://api.cerebras.ai/v1',
-  apiKey: process.env.CEREBRAS_API_KEY || 'dummy_key', // Required environment variable
+  apiKey: process.env.CEREBRAS_API_KEY || 'dummy_key',
 })
+
+/** Remove any <tool_call>...</tool_call> XML that Qwen sometimes emits inline */
+function stripToolCallXml(content: string | null | undefined): string {
+  if (!content) return ''
+  return content.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '').replace(/<tool_response>[\s\S]*?<\/tool_response>/g, '').trim()
+}
 
 const tools = [
   {
@@ -145,7 +151,7 @@ export async function POST(req: Request) {
       response = await openai.chat.completions.create({
         model: 'qwen-3-235b-a22b-instruct-2507',
         messages: [
-          { role: 'system', content: 'You are Ask Canvas 2.0. Answer questions about the user\'s Canvas LMS using the tools provided. If you call log_missing_tool, you must inform the user that their request has been logged successfully.' },
+          { role: 'system', content: 'You are Ask Canvas 2.0, an AI assistant for Canvas LMS. Use the provided tools to answer questions. IMPORTANT: Never use <tool_call> or <tool_response> XML tags — only use the structured tool_calls API. When presenting results to the user, format them cleanly using markdown lists or tables. Be concise and friendly.' },
           ...recentHistory.map((m: any) => ({
             role: m.role,
             content: m.content || '',
@@ -194,7 +200,9 @@ export async function POST(req: Request) {
           }
         }
 
-        history.push(message)
+        // Strip any raw XML before saving the intermediate tool-call message
+        const cleanedMsg = { ...message, content: stripToolCallXml(message.content) }
+        history.push(cleanedMsg)
         history.push({
           role: 'tool',
           tool_call_id: toolCall.id,

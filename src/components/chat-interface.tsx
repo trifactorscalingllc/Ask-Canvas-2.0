@@ -132,6 +132,14 @@ function WelcomeScreen({ userEmail }: { userEmail?: string }) {
 }
 
 // ── Main export ──────────────────────────────────────────────────────────────
+/** Strip residual <tool_call>/<tool_response> XML the model may have emitted */
+function cleanContent(raw: string): string {
+  return raw
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
+    .replace(/<tool_response>[\s\S]*?<\/tool_response>/g, '')
+    .trim()
+}
+
 export function ChatInterface({
   messages,
   input,
@@ -165,10 +173,13 @@ export function ChatInterface({
             messages.map((message, index) => {
               const isLast = index === messages.length - 1;
               if (message.role === 'assistant') {
+                const cleaned = cleanContent(message.content);
+                // Skip intermediate tool-call setup messages that have no displayable text
+                if (!cleaned) return null;
                 return (
                   <AssistantBubble
                     key={message.id}
-                    message={message}
+                    message={{ ...message, content: cleaned }}
                     isLast={isLast}
                     onFeedback={handleFeedback}
                     feedbackState={feedbackState}
