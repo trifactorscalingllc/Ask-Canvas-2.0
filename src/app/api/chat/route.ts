@@ -227,7 +227,8 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
             try {
               const streamWithResponse = turnStream as any;
               if (streamWithResponse.response) {
-                updateRateLimits(streamWithResponse.response.headers);
+                // Awaiting here to ensure it persists before next chunk/loop ends
+                await updateRateLimits(streamWithResponse.response.headers);
               }
             } catch (err) {
               console.warn('[MONITOR] Failed to capture headers:', err);
@@ -304,20 +305,26 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
 
           console.log(`[CHAT] Turn complete. Triggering auditor for chatId: ${activeChatId}`)
 
-          // AUDIT: Fire and forget (post-response)
-          gradeResponse({
-            userId: user.id,
-            chatId: activeChatId,
-            userPrompt: lastPrompt,
-            agentResponse: combinedText,
-            history: history
-          }).catch(e => console.error('[AUDITOR] Trigger Error:', e));
+          try {
+            // AUDIT: Await before closing to ensure Vercel doesn't kill the process
+            await gradeResponse({
+              userId: user.id,
+              chatId: activeChatId,
+              userPrompt: lastPrompt,
+              agentResponse: combinedText,
+              history: history
+            });
+            console.log('[CHAT] Auditor finished successfully');
+          } catch (e) {
+            console.error('[AUDITOR] Trigger Error:', e);
+          }
 
         } catch (err: any) {
-          send("\n\n(Connection Trace: v2.0.2-timeboxed) Processing took too long. History saved. Please refresh.")
-          await logError({ userId: user?.id, userPrompt: lastPrompt, err })
+          const timeoutMsg = "\n\n(Connection Trace: v2.0.2-timeboxed) Processing took too long. History saved. Please refresh.";
+          send(timeoutMsg);
+          await logError({ userId: user?.id, userPrompt: lastPrompt, agentResponse: combinedText + timeoutMsg, err });
         } finally {
-          controller.close()
+          controller.close();
         }
       }
     })
