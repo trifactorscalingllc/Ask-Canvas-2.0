@@ -21,64 +21,30 @@ const openai = new OpenAI({
   apiKey: process.env.CEREBRAS_API_KEY || 'dummy_key',
 })
 
-// ── Service-role Supabase client (Lazy loaded to prevent build crashes) ───────
+// ── Service-role Supabase client ──────────────────────────────────────────────
 let _supabaseService: any = null
 function getSupabaseService() {
   if (_supabaseService) return _supabaseService
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) {
-    console.warn('Logging skipped: Supabase Service Role credentials missing.')
-    return null
-  }
+  if (!url || !key) return null
   _supabaseService = createServiceClient(url, key)
   return _supabaseService
 }
 
-// ── Error Logger ─────────────────────────────────────────────────────────────
-function classifyError(err: any): { error_type: string; problem_identifier: string } {
-  const msg = String(err?.message || err || '')
-  const status = err?.status ?? err?.statusCode
-
-  if (status === 429 || msg.includes('429')) return {
-    error_type: 'rate_limit',
-    problem_identifier: 'AI engine rate limited (Cerebras 429).'
-  }
-  if (status === 401 || msg.includes('401')) return {
-    error_type: 'canvas_auth',
-    problem_identifier: "Canvas API key unauthorized."
-  }
-  if (msg.includes('canvas')) return {
-    error_type: 'canvas_api',
-    problem_identifier: `Canvas API failure: ${msg.slice(0, 100)}`
-  }
-  return {
-    error_type: 'unknown',
-    problem_identifier: `Unclassified: ${msg.slice(0, 150)}`
-  }
-}
-
-async function logError(opts: {
-  userId?: string
-  userPrompt?: string
-  agentResponse?: string
-  err: any
-}) {
+async function logError(opts: { userId?: string, userPrompt?: string, agentResponse?: string, err: any }) {
   try {
     const service = getSupabaseService()
     if (!service) return
-    const { error_type, problem_identifier } = classifyError(opts.err)
     await service.from('error_logs').insert({
       user_id: opts.userId ?? null,
       user_prompt: opts.userPrompt ?? null,
       agent_response: opts.agentResponse ?? null,
-      error_type,
+      error_type: 'runtime_error',
       error_message: String(opts.err?.message ?? opts.err ?? '').slice(0, 2000),
-      problem_identifier
+      problem_identifier: 'Runtime error categorized by system logger.'
     })
-  } catch (logErr) {
-    console.error('Failed to write error log:', logErr)
-  }
+  } catch { }
 }
 
 const tools = [
@@ -86,7 +52,15 @@ const tools = [
     type: 'function',
     function: {
       name: 'get_all_grades',
-      description: 'Fetch the users current grades for ALL active courses in one single call. Use this whenever the user asks for "my grades" or "how am I doing in my classes".',
+      description: 'Fetch grades for ALL active courses in one single call.',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_all_upcoming_assignments',
+      description: 'Fetch ALL upcoming assignments across all classes.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -97,28 +71,9 @@ const tools = [
       description: 'Get deep details about 1 specific assignment.',
       parameters: {
         type: 'object',
-        properties: {
-          course_id: { type: 'string' },
-          assignment_id: { type: 'string' },
-        },
+        properties: { course_id: { type: 'string' }, assignment_id: { type: 'string' } },
         required: ['course_id', 'assignment_id'],
       },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'get_active_courses',
-      description: 'Fetch the users active courses.',
-      parameters: { type: 'object', properties: {} },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'get_all_upcoming_assignments',
-      description: 'Fetch ALL upcoming assignments.',
-      parameters: { type: 'object', properties: {} },
     },
   },
   {
@@ -137,7 +92,7 @@ const tools = [
 
 export async function POST(req: Request) {
   let user: any = null
-  let lastUserPrompt = ''
+  let lastPrompt = ''
 
   try {
     const supabase = await createClient()
@@ -153,7 +108,6 @@ export async function POST(req: Request) {
 
     const canvasKey = decrypt(userData.encrypted_canvas_key, userData.iv)
 
-    // History
     let history: any[] = []
     if (chatId) {
       const { data: cd } = await supabase.from('chats').select('messages').eq('id', chatId).single()
@@ -161,7 +115,7 @@ export async function POST(req: Request) {
     }
     if (incoming?.length) {
       const nm = incoming[incoming.length - 1]
-      if (nm.role === 'user') { history.push(nm); lastUserPrompt = nm.content || ''; }
+      if (nm.role === 'user') { history.push(nm); lastPrompt = nm.content || ''; }
     }
     if (toolResult && pendingToolCall) { history.push(pendingToolCall); history.push(toolResult); }
 
@@ -174,34 +128,30 @@ export async function POST(req: Request) {
         let assembled = ''
 
         try {
-          // 1. Immediate Pulse
           send("Thinking...")
 
-          // 2. Greedy Data Fetching (Parallel)
-          const isGradeQuery = /grade|how am i doing|score/.test(lastUserPrompt.toLowerCase())
-          const isAssignmentQuery = /assignment|due|upcoming|exam|test|quiz|econ|syllabus/.test(lastUserPrompt.toLowerCase())
+          const isGrade = /grade|score|how am i doing|classes/.test(lastPrompt.toLowerCase())
+          const isAssign = /assignment|due|upcoming|exam|test|quiz|econ|syllabus/.test(lastPrompt.toLowerCase())
 
-          const [memories, preFetchedGrades, preFetchedAssignments] = await Promise.all([
+          const [memories, pGrades, pAssigns] = await Promise.all([
             supabase.from('user_memories').select('memory_text').eq('user_id', user.id),
-            (isGradeQuery) ? get_all_grades(canvasKey) : Promise.resolve(null),
-            (isAssignmentQuery) ? get_all_upcoming_assignments(canvasKey, userData.canvas_cache) : Promise.resolve(null)
+            isGrade ? get_all_grades(canvasKey) : Promise.resolve(null),
+            isAssign ? get_all_upcoming_assignments(canvasKey, userData.canvas_cache) : Promise.resolve(null)
           ])
 
-          if (preFetchedGrades || preFetchedAssignments) {
-            send("\n(Accessed Canvas records)")
-          }
+          if (pGrades || pAssigns) send("\n(Accessed Canvas records)")
 
           const systemPrompt = `You are the "Ask Canvas" Assistant.
 [CONTEXT]
 Name: ${userData.name || "Student"}
 Courses: ${JSON.stringify(userData.canvas_cache || [])}
-Pre-fetched Grades: ${JSON.stringify(preFetchedGrades || "None")}
-Pre-fetched Assignments: ${JSON.stringify(preFetchedAssignments || "None")}
+Pre-fetched Grades: ${JSON.stringify(pGrades || "None")}
+Pre-fetched Assignments: ${JSON.stringify(pAssigns || "None")}
 Memories: ${memories.data?.map(m => m.memory_text).join('; ') || 'None'}
 [RULES]
-- If data is in Pre-fetched, answer IMMEDIATELY.
+- If data is in context, answer IMMEDIATELY.
 - Use Mermaid diagrams for complex concepts.
-- Use structured H2 and bold text.`
+- Use H2 structure for long responses.`
 
           let currentHistory = [...history.slice(-10)]
           let iterations = 0
@@ -210,69 +160,82 @@ Memories: ${memories.data?.map(m => m.memory_text).join('; ') || 'None'}
           while (iterations < 5 && !loopFinished) {
             iterations++
 
-            // Keep Vercel alive during AI thinking Turn
-            send(" ")
-
-            const completion = await openai.chat.completions.create({
+            // ── STREAM THE ENTIRE TURN TO KEEP VERCEL ALIVE ───────────────────
+            const turnStream = await openai.chat.completions.create({
               model: 'qwen-3-235b-a22b-instruct-2507',
+              stream: true,
               messages: [{ role: 'system', content: systemPrompt }, ...currentHistory],
               tools: tools as any,
               tool_choice: 'auto'
             })
 
-            const msg = completion.choices[0].message as any
+            let turnText = ''
+            let turnToolCalls: any[] = []
 
-            if (msg.tool_calls?.length) {
-              send("\n(Processing details...)")
+            for await (const chunk of turnStream) {
+              const delta = chunk.choices[0]?.delta as any
 
-              const results = await Promise.all(msg.tool_calls.map(async (tc: any) => {
+              // If model is thinking/talking, send tokens to keep connection alive
+              if (delta.content) {
+                turnText += delta.content
+                send(delta.content) // Keep user updated in real-time
+              }
+
+              // Handle streaming tool calls
+              if (delta.tool_calls) {
+                for (const tc of delta.tool_calls) {
+                  if (!turnToolCalls[tc.index]) {
+                    turnToolCalls[tc.index] = { id: tc.id, type: 'function', function: { name: '', arguments: '' } }
+                  }
+                  if (tc.id) turnToolCalls[tc.index].id = tc.id
+                  if (tc.function?.name) turnToolCalls[tc.index].function.name += tc.function.name
+                  if (tc.function?.arguments) turnToolCalls[tc.index].function.arguments += tc.function.arguments
+                }
+              }
+            }
+
+            // Cleanup nulls from the toolCalls map
+            turnToolCalls = turnToolCalls.filter(Boolean)
+
+            if (turnToolCalls.length > 0) {
+              send("\n(Syncing with Canvas...)")
+
+              const results = await Promise.all(turnToolCalls.map(async (tc: any) => {
                 const name = tc.function.name
                 const args = JSON.parse(tc.function.arguments || '{}')
                 let res = ''
                 try {
                   if (name === 'get_all_grades') res = JSON.stringify(await get_all_grades(canvasKey))
                   else if (name === 'get_all_upcoming_assignments') res = JSON.stringify(await get_all_upcoming_assignments(canvasKey, userData.canvas_cache))
-                  else if (name === 'get_active_courses') res = JSON.stringify(await get_active_courses(canvasKey))
                   else if (name === 'get_assignment_details') res = JSON.stringify(await get_assignment_details(canvasKey, args.course_id, args.assignment_id))
                   else if (name === 'save_user_memory') {
                     await supabase.from('user_memories').insert({ user_id: user.id, memory_text: args.preference_text })
                     res = "Stored."
                   }
-                  else res = "Tool missing."
-                } catch { res = "Error." }
+                } catch { res = "Canvas API error." }
                 return { role: 'tool', tool_call_id: tc.id, name, content: res }
               }))
 
-              currentHistory.push(msg)
+              const assistantMsg = { role: 'assistant', content: turnText || null, tool_calls: turnToolCalls }
+              currentHistory.push(assistantMsg)
               results.forEach(r => currentHistory.push(r))
 
-              // Save history MID-LOOP 
+              // Mid-loop history save (Critical for persistence)
               await saveHistory(supabase, user.id, currentHistory, activeChatId)
             } else {
+              // No tools? We are done.
               loopFinished = true
-
-              const finalStream = await openai.chat.completions.create({
-                model: 'qwen-3-235b-a22b-instruct-2507',
-                stream: true,
-                messages: [{ role: 'system', content: systemPrompt }, ...currentHistory]
-              })
-
-              send("\n\n")
-
-              for await (const chunk of finalStream) {
-                const token = chunk.choices[0]?.delta?.content ?? ''
-                if (token) { assembled += token; send(token); }
-              }
+              assembled = turnText
             }
           }
 
-          // Final Persist
+          // Final update
           history.push({ role: 'assistant', content: assembled })
           await saveHistory(supabase, user.id, history, activeChatId)
 
         } catch (err: any) {
-          send("\n\n[System Timeout or Error]. We are looking into this.")
-          await logError({ userId: user?.id, userPrompt: lastUserPrompt, agentResponse: assembled, err })
+          send("\n\n[Connection Timeout]. Please refresh and the response should be stored in your history.")
+          await logError({ userId: user?.id, userPrompt: lastPrompt, err })
         } finally {
           controller.close()
         }
