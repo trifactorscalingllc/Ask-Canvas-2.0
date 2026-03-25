@@ -152,25 +152,25 @@ export async function POST(req: Request) {
           const isAssign = /assignment|due|upcoming|exam|test|quiz|syllabus/.test(lastPrompt.toLowerCase())
 
           history.push({ role: 'assistant', content: `[INTERNAL] Starting data pre-fetch for prompt: "${lastPrompt}"` })
-          const [memories, pGrades, pAssigns] = await Promise.all([
+          const [memories, pGrades] = await Promise.all([
             supabase.from('user_memories').select('memory_text').eq('user_id', user.id),
             isGrade ? get_all_grades(canvasKey) : Promise.resolve(null),
-            isAssign ? get_all_upcoming_assignments(canvasKey, userData.canvas_cache as any) : Promise.resolve(null)
+            // REMOVED ASSIGNMENT PRE-FETCH: This forces the AI to use high-fidelity tools for every query, 
+            // preventing stale/truncated cache from polluting the initial context.
           ])
-          history.push({ role: 'assistant', content: `[INTERNAL] Pre-fetch complete. Found ${pGrades ? "grades" : "no grades"} and ${pAssigns ? pAssigns.length + " assignments" : "no assignments"}` })
+          history.push({ role: 'assistant', content: `[INTERNAL] Pre-fetch complete. Found ${pGrades ? "grades" : "no grades"}.` })
 
           const systemPrompt = `You are the "Ask Canvas" Assistant. v2.0-robust.
 [CRITICAL: FRESH DATA POLICY]
-1. PRE-FETCHED data is for context ONLY. 
-2. ALWAYS use your TOOLS to get live data if the user asks for current grades, assignments, or schedules. NEVER respond based on pre-fetched data alone.
-3. If you have " Bobby the Entrepreneur " in pre-fetch, still CALL 'get_all_upcoming_assignments' to verify it is still there.
+1. ALWAYS use your TOOLS to get live data if the user asks for current grades, assignments, or schedules. NEVER respond based on pre-fetched data alone.
+2. If you see assignments like "Bobby the Entrepreneur" in conversation history, still CALL 'get_all_upcoming_assignments' to verify if you are providing a summary.
 
 [CONTEXT]
 Name: ${userData.name || "Student"}
+Current Date: ${new Date().toISOString()} (Use this to compare against 'term_end' dates from tools)
 Courses: ${JSON.stringify(userData.canvas_cache || [])}
 Pre-fetched (STALE/CONTEXT ONLY):
 - Grades: ${JSON.stringify(pGrades || "None")}
-- Assignments: ${JSON.stringify(pAssigns || "None")}
 Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
 
 [STRICT FORMATTING]
@@ -185,13 +185,15 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
 5. Dates: Use "Month Day, Year, HH:MM AM/PM (Timezone)" format (e.g., "March 26, 2026, 11:00 AM (EST)").
 
 [CANVAS ACADEMIC CONTEXT]
-- Season: Spring 2026
-- Rule: UNLESS EXPLICITLY TOLD OTHERWISE, only reference Spring 2026 / Spring semester classes in response to queries about assignments, grades, or courses. Ignore older classes unless the user mentions them.
+1. AUTONOMOUS SEMESTER TRACKING: Use the 'term_end' and 'semester' fields returned by 'get_all_grades' or 'get_all_upcoming_assignments' to categorize courses. 
+2. If today's date (${new Date().toISOString()}) is BEFORE a course's 'term_end', consider it a Current/Active course. 
+3. If today's date is AFTER 'term_end', consider it a "Historical/Finished" course.
+4. PRIORITIZE Current/Active courses unless the user specifically asks for historical data (e.g., "Fall grades").
 
 [CONTEXT & RESPONSE POLICY]
 1. **Strict Prompt Adherence**: Only respond to the latest user message. Do not repeat previous information (like assignment lists) unless specifically asked for or needed to answer the new question.
 2. **Reference Resolution**: If the user uses pronouns or vague terms (e.g., "that assignment," "it," "the class"), use the conversation history to identify the specific object being discussed.
-3. **Minimalism**: If the user asks for "classes," do not volunteer "assignments" unless they are integrated into a course overview. NEVER re-display a table or list that was already shown in the history unless the user explicitly asks for it again or it needs updating.`
+3. **Minimalism**: If the user asks for "classes," do not volunteer "assignments" unless they are integrated into a course overview. NEVER re-display a table or list that was already shown in the history unless the user explicitly asks for it again or it needs updating.`;
 
           let currentHistory = [...history.slice(-10)]
           let anyToolsCalledAcrossIterations = false
@@ -206,7 +208,7 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
                 ? "(Note: Request timed out during initial data fetch. Please try a smaller date range.)"
                 : "(Note: Results partial due to processing limits)";
               send("\n\n" + timeoutMsg)
-              history.push({ role: 'assistant', content: `[INTERNAL] Timeout reached at ${elapsed}ms. Stopping iterations.` })
+              history.push({ role: 'assistant', content: `[INTERNAL] Timeout reached at ${elapsed} ms.Stopping iterations.` })
               loopFinished = true
               break
             }
@@ -303,7 +305,7 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
           // Ensure we capture the ID for new chats so the auditor can update them
           activeChatId = await saveHistory(supabase, user.id, history, activeChatId)
 
-          console.log(`[CHAT] Turn complete. Triggering auditor for chatId: ${activeChatId}`)
+          console.log(`[CHAT] Turn complete.Triggering auditor for chatId: ${activeChatId} `)
 
           try {
             // AUDIT: Await before closing to ensure Vercel doesn't kill the process
