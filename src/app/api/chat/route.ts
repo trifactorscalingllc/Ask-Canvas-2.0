@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { createClient } from '@/lib/supabase/server'
 import { decrypt } from '@/lib/crypto'
+
+export const dynamic = 'force-dynamic'
+export const maxDuration = 60 // Allow 60 seconds for multi-step AI reasoning
 import {
   get_active_courses,
   get_current_grades,
@@ -240,8 +243,13 @@ FORMATTING RULES (STRICT):
 
 [KNOWN USER CONTEXT]
 First Name: ${userData.name ? userData.name.split(' ')[0] : "Student"}
-Active Courses (Canvas ID Mapping): ${userData.canvas_cache ? JSON.stringify(userData.canvas_cache) : "Unknown (call get_active_courses)"}
-User Preferences/Memories: ${memories?.length ? memories.map(m => m.memory_text).join('; ') : "None"}`
+Active Courses (Canvas ID Mapping): ${userData.canvas_cache ? JSON.stringify(userData.canvas_cache) : "Unknown"}
+
+INSTRUCTIONS FOR DATA ACCESS:
+- IF 'Active Courses' above has a list, YOU ALREADY HAVE THE IDs. DO NOT call get_active_courses.
+- Use the numeric ID directly from the list above.
+- If you have the data, PROCEED IMMEDIATELY TO THE FINAL RESPONSE.
+- User Preferences/Memories: ${memories?.length ? memories.map(m => m.memory_text).join('; ') : "None"}`
 
     let response;
     try {

@@ -95,14 +95,27 @@ export default function ChatPage() {
     setIsLoading(true)
     setPendingToolCall(null)
 
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 60000)
+
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payloadToSend)
+        body: JSON.stringify(payloadToSend),
+        signal: controller.signal
       })
 
-      const data = await res.json()
+      clearTimeout(timeoutId)
+
+      const contentType = res.headers.get('content-type')
+      let data: any = {}
+      if (contentType && contentType.includes('application/json')) {
+        data = await res.json()
+      } else {
+        const text = await res.text()
+        throw new Error(`Server returned non-JSON response: ${res.status} ${text.slice(0, 100)}`)
+      }
 
       if (!res.ok || data.error) {
         throw new Error(data.error || 'The server responded with a fatal error.')
