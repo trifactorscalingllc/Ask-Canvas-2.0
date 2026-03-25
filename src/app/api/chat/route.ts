@@ -17,16 +17,15 @@ const openai = new OpenAI({
   apiKey: process.env.CEREBRAS_API_KEY || 'dummy_key',
 })
 
+const startTime = Date.now()
+
 // ── Service-role Supabase client ──────────────────────────────────────────────
 let _supabaseService: any = null
 function getSupabaseService() {
   if (_supabaseService) return _supabaseService
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) {
-    console.error("CRITICAL: SUPABASE_SERVICE_ROLE_KEY is missing from environment.")
-    return null
-  }
+  if (!url || !key) return null
   _supabaseService = createServiceClient(url, key)
   return _supabaseService
 }
@@ -35,14 +34,9 @@ async function logError(opts: { userId?: string, userPrompt?: string, agentRespo
   try {
     const msg = String(opts.err?.message ?? opts.err ?? '')
     console.error(`[DIAGNOSTIC LOG]: ${msg}`)
-
     const service = getSupabaseService()
-    if (!service) {
-      console.error("Logging aborted: No service client available.")
-      return
-    }
-
-    const { error } = await service.from('error_logs').insert({
+    if (!service) return
+    await service.from('error_logs').insert({
       user_id: opts.userId ?? null,
       user_prompt: opts.userPrompt ?? null,
       agent_response: opts.agentResponse ?? null,
@@ -50,9 +44,8 @@ async function logError(opts: { userId?: string, userPrompt?: string, agentRespo
       error_message: msg.slice(0, 2000),
       problem_identifier: msg.toLowerCase().includes('timeout') ? 'Vercel/Network Timeout' : 'Internal processing error'
     })
-    if (error) console.error("Supabase Insert Error:", error)
   } catch (e) {
-    console.error('Fatal Logging failure:', e)
+    console.error('Logging failed:', e)
   }
 }
 
@@ -135,12 +128,14 @@ export async function POST(req: Request) {
     const readable = new ReadableStream({
       async start(controller) {
         const send = (txt: string) => controller.enqueue(encoder.encode(txt))
-        let heartbeat: any = null
+        let combinedText = ''
+        let loopFinished = false
+        let iterations = 0
+
+        // START: Initial Pulse
+        send("\u200B")
 
         try {
-          // Send thinking pulse and start an interval that ONLY runs while LLM is NOT streaming
-          send("Thinking...")
-
           const isGrade = /grade|score|how am i doing|classes/.test(lastPrompt.toLowerCase())
           const isAssign = /assignment|due|upcoming|exam|test|quiz|econ|syllabus/.test(lastPrompt.toLowerCase())
 
@@ -150,7 +145,7 @@ export async function POST(req: Request) {
             isAssign ? get_all_upcoming_assignments(canvasKey, userData.canvas_cache as any) : Promise.resolve(null)
           ])
 
-          const systemPrompt = `You are the "Ask Canvas" Assistant.
+          const systemPrompt = `You are the "Ask Canvas" Assistant. v2.0-robust.
 [CONTEXT]
 Name: ${userData.name || "Student"}
 Courses: ${JSON.stringify(userData.canvas_cache || [])}
@@ -158,17 +153,25 @@ Pre-fetched Grades: ${JSON.stringify(pGrades || "None")}
 Pre-fetched Assignments: ${JSON.stringify(pAssigns || "None")}
 Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
 [STRICT FORMATTING]
-1. Mermaid graphs MUST be in their own \` \` \`mermaid block with no text on the same line.
-2. If rendering a table, ensure the header row is clearly defined.
-3. Keep tokens flowing.`
+1. Mermaid diagrams must be wrapped in \` \` \`mermaid blocks on new lines.
+2. Tables must use standard Markdown grid format.
+3. Be concise.`
 
           let currentHistory = [...history.slice(-10)]
-          let iterations = 0
-          let loopFinished = false
-          let combinedText = ''
 
-          while (iterations < 3 && !loopFinished) { // Reduced to 3 to stay within 60s
+          while (iterations < 5 && !loopFinished) {
             iterations++
+
+            // SECURITY: If we are close to Vercel's 60s limit (50s), force stop.
+            const elapsed = Date.now() - startTime
+            if (elapsed > 45000) {
+              send("\n\n(Note: Results partial due to processing limits)")
+              loopFinished = true
+              break
+            }
+
+            // HEARTBEAT: Explicitly send a character before starting a long LLM turn
+            send("\u200B")
 
             const turnStream = await openai.chat.completions.create({
               model: 'qwen-3-235b-a22b-instruct-2507',
@@ -178,15 +181,12 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
               tool_choice: 'auto'
             })
 
-            let turnText = '' // This remains local to capturing the current turn's text
+            let turnText = ''
             let turnToolCalls: any[] = []
 
             for await (const chunk of turnStream) {
               const delta = chunk.choices[0]?.delta as any
               if (delta.content) {
-                // IMPORTANT: Stop any heartbeat while we are receiving real tokens to avoid corruption
-                if (heartbeat) { clearInterval(heartbeat); heartbeat = null; }
-
                 turnText += delta.content
                 send(delta.content)
               }
@@ -206,10 +206,8 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
             turnToolCalls = turnToolCalls.filter(Boolean)
 
             if (turnToolCalls.length > 0) {
-              // LLM finished but is waiting for tool results. START HEARTBEAT NOW.
-              if (!heartbeat) {
-                heartbeat = setInterval(() => { send("\u200B") }, 3000)
-              }
+              // HEARTBEAT: Before tool calls
+              send("\u200B")
 
               const results = await Promise.all(turnToolCalls.map(async (tc: any) => {
                 const name = tc.function.name
@@ -230,7 +228,8 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
               currentHistory.push(assistantMsg)
               results.forEach(r => currentHistory.push(r))
 
-              await saveHistory(supabase, user.id, currentHistory, activeChatId)
+              // HEARTBEAT: After tools, before next LLM turn
+              send("\u200B")
             } else {
               loopFinished = true
             }
@@ -240,10 +239,9 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
           await saveHistory(supabase, user.id, history, activeChatId)
 
         } catch (err: any) {
-          send("\n\n(Connection Trace: v2.0.1-perf) The network is busy. I've saved the partial response to your chat history. Please refresh if this persists.")
+          send("\n\n(Connection Trace: v2.0.2-timeboxed) Processing took too long. History saved. Please refresh.")
           await logError({ userId: user?.id, userPrompt: lastPrompt, err })
         } finally {
-          if (heartbeat) clearInterval(heartbeat)
           controller.close()
         }
       }
