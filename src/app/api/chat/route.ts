@@ -2,7 +2,14 @@ import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { createClient } from '@/lib/supabase/server'
 import { decrypt } from '@/lib/crypto'
-import { get_active_courses, get_current_grades, get_upcoming_assignments, get_all_upcoming_assignments, get_user_profile } from '@/lib/canvas-tools'
+import {
+  get_active_courses,
+  get_current_grades,
+  get_upcoming_assignments,
+  get_all_upcoming_assignments,
+  get_user_profile,
+  get_assignment_details
+} from '@/lib/canvas-tools'
 
 const openai = new OpenAI({
   baseURL: 'https://api.cerebras.ai/v1',
@@ -16,6 +23,21 @@ function stripToolCallXml(content: string | null | undefined): string {
 }
 
 const tools = [
+  {
+    type: 'function',
+    function: {
+      name: 'get_assignment_details',
+      description: 'Get deep details about 1 specific assignment including its description, allowed file types, and more. Use this when the user asks "What is this assignment about?" or needs details on a specific ID.',
+      parameters: {
+        type: 'object',
+        properties: {
+          course_id: { type: 'string', description: 'The numeric numeric course ID (found in context or via get_active_courses)' },
+          assignment_id: { type: 'string', description: 'The numeric assignment ID' },
+        },
+        required: ['course_id', 'assignment_id'],
+      },
+    },
+  },
   {
     type: 'function',
     function: {
@@ -202,6 +224,7 @@ export async function POST(req: Request) {
 
 TOOL ROUTING RULES (follow exactly):
 - schedule/upcoming/due this week/next week/any assignment list -> call get_all_upcoming_assignments immediately. It handles everything internally.
+- specific assignment "what is this about" or instructions -> call get_assignment_details(course_id, assignment_id).
 - specific course assignments or grades -> Use the KNOWN USER CONTEXT below for the exact numeric course_id. Do NOT invent IDs. If the Known Active Courses list says "Unknown", then YOU MUST call get_active_courses FIRST.
 - missing features (announcements, inbox, syllabus, calendar, messaging) -> YOU MUST call log_missing_tool to record the gap. DO NOT just apologize.
 - list courses -> call get_active_courses.
@@ -254,7 +277,9 @@ User Preferences/Memories: ${memories?.length ? memories.map(m => m.memory_text)
             })
             if (error) throw new Error(error.message)
             resultString = "Memory saved successfully."
-          } else if (name === 'get_active_courses') {
+          } else if (name === 'get_assignment_details') {
+          resultString = JSON.stringify(await get_assignment_details(canvasKey, args.course_id, args.assignment_id))
+        } else if (name === 'get_active_courses') {
             const courses = await get_active_courses(canvasKey);
             resultString = JSON.stringify(courses);
           } else if (name === 'get_current_grades') {

@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Send, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Send, ThumbsUp, ThumbsDown, ExternalLink } from 'lucide-react';
 import { submitFeedback } from '@/app/actions/feedback';
 
 export interface Message {
@@ -67,7 +67,23 @@ function AssistantBubble({ message, isLast, onFeedback, feedbackState }: {
       </div>
       <div className="max-w-[80%] md:max-w-[72%] bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-2xl rounded-bl-sm px-5 py-3.5 shadow-sm">
         <div className="prose prose-blue prose-sm dark:prose-invert">
-          <ReactMarkdown>{shown}</ReactMarkdown>
+          <ReactMarkdown
+            components={{
+              a: ({ href, children }) => (
+                <a 
+                  href={href} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white !no-underline rounded-lg text-xs font-semibold transition-all hover:scale-[1.02] active:scale-95 shadow-sm my-1"
+                >
+                  {children}
+                  <ExternalLink className="w-3 h-3 opacity-80" />
+                </a>
+              )
+            }}
+          >
+            {shown}
+          </ReactMarkdown>
           {isNew && !done && <span className="inline-block w-1 h-4 bg-blue-500 ml-0.5 animate-pulse align-middle" />}
         </div>
         {isLast && done && (

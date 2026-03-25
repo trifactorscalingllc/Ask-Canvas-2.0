@@ -109,3 +109,18 @@ export async function get_user_profile(canvasKey: string) {
   }
   return res.json();
 }
+
+export async function get_assignment_details(token: string, course_id: string, assignment_id: string) {
+  const data = await fetchCanvas(`/api/v1/courses/${course_id}/assignments/${assignment_id}`, token);
+  
+  return {
+    id: data.id,
+    name: data.name,
+    description: data.description, // HTML content
+    due_at: data.due_at,
+    points_possible: data.points_possible,
+    html_url: data.html_url,
+    allowed_extensions: data.allowed_extensions,
+    is_quiz: data.is_quiz_assignment,
+  };
+}
