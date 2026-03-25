@@ -274,7 +274,7 @@ User Preferences/Memories: ${memories?.length ? memories.map(m => m.memory_text)
     while (iterations < maxIterations) {
       iterations++
 
-      // [HEALING] Fallback for models that drift into XML tool-calling instead of using the tools array
+      // [HEALING] Fallback for models that drift into XML tool-calling
       if (!currentMessage.tool_calls && currentMessage.content?.includes('<tool_call>')) {
         try {
           const match = /<tool_call>\s*({[\s\S]*?})\s*<\/tool_call>/i.exec(currentMessage.content)
@@ -296,83 +296,99 @@ User Preferences/Memories: ${memories?.length ? memories.map(m => m.memory_text)
 
       // Check if we have tool calls to process
       if (currentMessage.tool_calls && currentMessage.tool_calls.length > 0) {
-        const toolCall = currentMessage.tool_calls[0] as any
-        const { name, arguments: argsString } = toolCall.function
-        const args = JSON.parse(argsString || '{}')
-
-        // Handle Confirmation-Required Tools (post_...) - These MUST break the loop and return to client
-        if (name.startsWith('post_')) {
+        
+        // Handle Confirmation-Required Tools (post_...) - These break the loop immediately
+        const postCall = currentMessage.tool_calls.find((tc: any) => tc.function.name.startsWith('post_'))
+        if (postCall) {
           history.push(currentMessage)
           const finalId = await saveHistory(supabase, user.id, history, activeChatId)
           return NextResponse.json({
             status: 'requires_confirmation',
-            toolCall: toolCall,
+            toolCall: postCall,
             message: 'This action requires your confirmation before writing to Canvas.',
-            functionName: name,
-            arguments: args,
+            functionName: postCall.function.name,
+            arguments: JSON.parse(postCall.function.arguments || '{}'),
             chatId: finalId
           })
         }
 
-        // Execute Tool
-        let resultString = ''
-        try {
-          if (name === 'save_user_memory') {
-            const { error } = await supabase.from('user_memories').insert({
-              user_id: user.id,
-              memory_text: args.preference_text
-            })
-            if (error) throw new Error(error.message)
-            resultString = "Memory saved successfully."
-          } else if (name === 'get_assignment_details') {
-            resultString = JSON.stringify(await get_assignment_details(canvasKey, args.course_id, args.assignment_id))
-          } else if (name === 'get_active_courses') {
-            resultString = JSON.stringify(await get_active_courses(canvasKey))
-          } else if (name === 'get_current_grades') {
-            resultString = JSON.stringify(await get_current_grades(canvasKey, args.course_id))
-          } else if (name === 'get_all_upcoming_assignments') {
-            resultString = JSON.stringify(await get_all_upcoming_assignments(canvasKey))
-          } else if (name === 'get_upcoming_assignments') {
-            resultString = JSON.stringify(await get_upcoming_assignments(canvasKey, args.course_id))
-          } else if (name === 'log_missing_tool') {
-            await supabase.from('proposed_tools').insert({ user_id: user.id, requested_feature: args.requested_feature })
-            resultString = "Successfully logged requested feature to the developers."
-          } else {
-            resultString = "Tool not implemented."
-          }
-        } catch (err: any) {
-          resultString = err.message === '401_UNAUTHORIZED' 
-            ? "Your Canvas API key is invalid or expired." 
-            : `Canvas API error: ${err.message}`
-        }
+        // Parallel Execute ALL Tool Calls in the array
+        const results = await Promise.all(currentMessage.tool_calls.map(async (toolCall: any) => {
+          const { name, arguments: argsString } = toolCall.function
+          const args = JSON.parse(argsString || '{}')
+          let resultString = ''
 
-        // Clean and push to history
+          try {
+            if (name === 'save_user_memory') {
+              const { error } = await supabase.from('user_memories').insert({ user_id: user.id, memory_text: args.preference_text })
+              if (error) throw new Error(error.message)
+              resultString = "Memory saved successfully."
+            } else if (name === 'get_assignment_details') {
+              resultString = JSON.stringify(await get_assignment_details(canvasKey, args.course_id, args.assignment_id))
+            } else if (name === 'get_active_courses') {
+              resultString = JSON.stringify(await get_active_courses(canvasKey))
+            } else if (name === 'get_current_grades') {
+              resultString = JSON.stringify(await get_current_grades(canvasKey, args.course_id))
+            } else if (name === 'get_all_upcoming_assignments') {
+              resultString = JSON.stringify(await get_all_upcoming_assignments(canvasKey))
+            } else if (name === 'get_upcoming_assignments') {
+              resultString = JSON.stringify(await get_upcoming_assignments(canvasKey, args.course_id))
+            } else if (name === 'log_missing_tool') {
+              await supabase.from('proposed_tools').insert({ user_id: user.id, requested_feature: args.requested_feature })
+              resultString = "Successfully logged requested feature to the developers."
+            } else {
+              resultString = "Tool not implemented."
+            }
+          } catch (err: any) {
+            resultString = err.message === '401_UNAUTHORIZED' 
+              ? "Your Canvas API key is invalid or expired." 
+              : `Canvas API error: ${err.message}`
+          }
+
+          return {
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            name: name,
+            content: resultString
+          }
+        }))
+
+        // Push messages to history
         const cleanedMsg = { ...currentMessage, content: stripToolCallXml(currentMessage.content) }
         history.push(cleanedMsg)
-        history.push({
-          role: 'tool',
-          tool_call_id: toolCall.id,
-          name: name,
-          content: resultString
-        })
+        results.forEach(res => history.push(res))
 
-        // Get next response from AI
-        const nextResponse = await openai.chat.completions.create({
-          model: 'qwen-3-235b-a22b-instruct-2507',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            ...history.slice(-15).map((m: any) => ({
-              role: m.role,
-              content: m.content || '',
-              tool_calls: m.tool_calls,
-              tool_call_id: m.tool_call_id,
-              name: m.name
-            }))
-          ]
-        })
+        // Get next response with retry for 429s
+        let retryCount = 0
+        let nextResponse: any = null
+        while (retryCount < 3) {
+          try {
+            nextResponse = await openai.chat.completions.create({
+              model: 'qwen-3-235b-a22b-instruct-2507',
+              messages: [
+                { role: 'system', content: systemPrompt },
+                ...history.slice(-15).map((m: any) => ({
+                  role: m.role,
+                  content: m.content || '',
+                  tool_calls: m.tool_calls,
+                  tool_call_id: m.tool_call_id,
+                  name: m.name
+                }))
+              ]
+            })
+            break
+          } catch (err: any) {
+            if (err.status === 429 && retryCount < 2) {
+              retryCount++
+              await new Promise(r => setTimeout(r, 1000 * retryCount)) // Linear backoff
+              continue
+            }
+            throw err
+          }
+        }
+        if (!nextResponse) break;
         currentMessage = nextResponse.choices[0].message as any
       } else {
-        // No more tool calls, exit loop
         break
       }
     }
@@ -384,7 +400,11 @@ User Preferences/Memories: ${memories?.length ? memories.map(m => m.memory_text)
 
   } catch (err: any) {
     console.error('API Error:', err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    const status = err.status || 500
+    const message = err.status === 429 
+      ? "Wait, the AI engine is a bit busy! (429 Rate Limit). Please try again in 5 seconds." 
+      : err.message
+    return NextResponse.json({ error: message }, { status })
   }
 }
 
