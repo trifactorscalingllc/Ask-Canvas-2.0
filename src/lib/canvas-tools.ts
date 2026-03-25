@@ -124,3 +124,18 @@ export async function get_assignment_details(token: string, course_id: string, a
     is_quiz: data.is_quiz_assignment,
   };
 }
+
+export async function get_all_grades(token: string) {
+  const data = await fetchCanvas('/api/v1/courses?include[]=total_scores&enrollment_state=active', token);
+  if (!Array.isArray(data)) return [];
+
+  return data.map((c: any) => {
+    const enrollments = c.enrollments || [];
+    return {
+      course_name: c.name,
+      course_code: c.course_code,
+      grade: enrollments[0]?.computed_current_grade || 'N/A',
+      score: enrollments[0]?.computed_current_score || 'N/A',
+    };
+  });
+}
