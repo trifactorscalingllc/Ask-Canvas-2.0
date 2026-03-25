@@ -104,9 +104,11 @@ export async function POST(req: Request) {
     const { messages: incoming, pendingToolCall, toolResult, chatId } = body
 
     const { data: userData } = await supabase.from('users').select('*').eq('id', user.id).single()
-    if (!userData?.encrypted_canvas_key) return NextResponse.json({ error: 'Canvas key missing' }, { status: 400 })
+    if (!userData || !userData.encrypted_canvas_key || !userData.iv) {
+      return NextResponse.json({ error: 'Canvas key missing' }, { status: 400 })
+    }
 
-    const canvasKey = decrypt(userData.encrypted_canvas_key, userData.iv)
+    const canvasKey = decrypt(userData.encrypted_canvas_key as string, userData.iv as string)
 
     let history: any[] = []
     if (chatId) {
