@@ -146,16 +146,28 @@ export async function POST(req: Request) {
           ])
 
           const systemPrompt = `You are the "Ask Canvas" Assistant. v2.0-robust.
+[CRITICAL: FRESH DATA POLICY]
+1. PRE-FETCHED data is for context ONLY. 
+2. ALWAYS use your TOOLS to get live data if the user asks for current grades, assignments, or schedules. NEVER respond based on pre-fetched data alone.
+3. If you have " Bobby the Entrepreneur " in pre-fetch, still CALL 'get_all_upcoming_assignments' to verify it is still there.
+
 [CONTEXT]
 Name: ${userData.name || "Student"}
 Courses: ${JSON.stringify(userData.canvas_cache || [])}
-Pre-fetched Grades: ${JSON.stringify(pGrades || "None")}
-Pre-fetched Assignments: ${JSON.stringify(pAssigns || "None")}
+Pre-fetched (STALE/CONTEXT ONLY):
+- Grades: ${JSON.stringify(pGrades || "None")}
+- Assignments: ${JSON.stringify(pAssigns || "None")}
 Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
+
 [STRICT FORMATTING]
-1. Mermaid diagrams must be wrapped in \` \` \`mermaid blocks on new lines.
-2. Tables must use standard Markdown grid format.
-3. Be concise.`
+1. Mermaid graphs: Wrap in \` \` \`mermaid blocks on new lines.
+2. Tables: MUST use standard Markdown with pipes (|) and a divider row (e.g. |---|---|).
+   EXAMPLE:
+   | Course | Assignment | Due Date |
+   |:-------|:-----------|:---------|
+   | ECON10 | Chapter 1  | Oct 12   |
+3. Spacing: Use double newlines between paragraphs and visuals.
+4. Bold: Use **bold** for names of courses and assignments.`
 
           let currentHistory = [...history.slice(-10)]
 

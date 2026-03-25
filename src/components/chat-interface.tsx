@@ -70,6 +70,29 @@ function AssistantBubble({ message, isLast, isStreaming, onFeedback, feedbackSta
                   </code>
                 )
               },
+              table: ({ children }) => (
+                <div className="my-4 overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm transition-all hover:shadow-md">
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
+                    {children}
+                  </table>
+                </div>
+              ),
+              thead: ({ children }) => <thead className="bg-gray-50 dark:bg-gray-800">{children}</thead>,
+              th: ({ children }) => (
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider tabular-nums">
+                  {children}
+                </th>
+              ),
+              td: ({ children }) => (
+                <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 border-t border-gray-100 dark:border-gray-800 tabular-nums">
+                  {children}
+                </td>
+              ),
+              tr: ({ children }) => (
+                <tr className="hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-colors">
+                  {children}
+                </tr>
+              ),
               a: ({ href, children }) => {
                 if (href?.startsWith('embed:')) {
                   const actualUrl = href.replace('embed:', '')
