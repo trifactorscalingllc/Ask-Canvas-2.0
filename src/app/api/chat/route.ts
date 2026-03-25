@@ -222,23 +222,21 @@ export async function POST(req: Request) {
 
     const systemPrompt = `You are Ask Canvas AI, a proactive academic assistant with direct access to the user's Canvas LMS.
 
-TOOL ROUTING RULES (follow exactly):
-- schedule/upcoming/due this week/next week/any assignment list -> call get_all_upcoming_assignments immediately. It handles everything internally.
-- specific assignment "what is this about" or instructions -> call get_assignment_details(course_id, assignment_id).
-- specific course assignments or grades -> Use the KNOWN USER CONTEXT below for the exact numeric course_id. Do NOT invent IDs. If the Known Active Courses list says "Unknown", then YOU MUST call get_active_courses FIRST.
-- missing features (announcements, inbox, syllabus, calendar, messaging) -> YOU MUST call log_missing_tool to record the gap. DO NOT just apologize.
-- list courses -> call get_active_courses.
-- NEVER invent tool names. Use only the OpenAI tool_calls API. No XML tags.
+TOOL ROUTING RULES (CRITICAL):
+- USE ONLY the standardized OpenAI/Cerebras 'tool_calls' array for all functions. 
+- NEVER output XML tags like <tool_call>, <function_call>, or <thought>. 
+- NEVER mention tool names in your text response.
+- If you call a tool, your content MUST be empty or a brief "Thinking...".
+- When a "study model", "exam prep", "visual", or "diagram" is requested, YOU MUST generate a Mermaid diagram in your FINAL response (after all tool calls) using \` \` \`mermaid \` \` \` syntax.
 
 FORMATTING RULES (STRICT):
 1. **No blocks of text**: Break everything into headers (#, ##), bold labels, and indenting.
-2. **Mandatory Visuals**: If the user asks for a "study model", "exam prep", "visual", "diagram", or "process", YOU MUST generate a Mermaid diagram using \` \` \`mermaid \` \` \` syntax (without spaces between backticks) at the end of your response.
+2. **Mandatory Visuals**: Generate Mermaid diagrams for ANY complex conceptual request.
 3. **Visual Hierarchy**: Use H1 for main topic, H2 for subtopics.
 4. **File Embedding**: If you reference a direct file URL, YOU MUST embed it at the BOTTOM of your message using \`[File Title](embed:URL)\`.
-5. **Emojis**: Use Section-only emojis (e.g. 📊 Topics). Lean back on them elsewhere.
-6. **Bolding**: Bold key terms specifically to create a "scannable" response.
-7. **Tool Calls**: Use ONLY the OpenAI tool_calls structure. NEVER use XML tags or mention tool names in text.
-8. **Button Links**: Standard web links or Canvas links should be formatted as \`[Button Text](URL)\`.
+5. **Emojis**: Use Section-only emojis (ex: 📊 Topics). 
+6. **Bolding**: Bold key terms (ex: **Macroeconomics**) for scannability.
+7. **Button Links**: Standard links = \`[Button Text](URL)\`.
 
 [KNOWN USER CONTEXT]
 First Name: ${userData.name ? userData.name.split(' ')[0] : "Student"}
@@ -269,15 +267,55 @@ User Preferences/Memories: ${memories?.length ? memories.map(m => m.memory_text)
       throw engineError;
     }
 
-    const message = response.choices[0].message
+    let currentMessage = response.choices[0].message as any
+    let iterations = 0
+    const maxIterations = 5
 
-    if (message.tool_calls && message.tool_calls.length > 0) {
-      const toolCall = message.tool_calls[0] as any
-      const { name, arguments: argsString } = toolCall.function
-      const args = JSON.parse(argsString || '{}')
+    while (iterations < maxIterations) {
+      iterations++
 
-      if (name.startsWith('get_') || name === 'save_user_memory') {
-        let resultString = '';
+      // [HEALING] Fallback for models that drift into XML tool-calling instead of using the tools array
+      if (!currentMessage.tool_calls && currentMessage.content?.includes('<tool_call>')) {
+        try {
+          const match = /<tool_call>\s*({[\s\S]*?})\s*<\/tool_call>/i.exec(currentMessage.content)
+          if (match) {
+            const parsed = JSON.parse(match[1])
+            currentMessage.tool_calls = [{
+              id: `call_fb_${Math.random().toString(36).substr(2, 5)}`,
+              type: 'function',
+              function: {
+                name: parsed.name,
+                arguments: typeof parsed.arguments === 'string' ? parsed.arguments : JSON.stringify(parsed.arguments)
+              }
+            }]
+          }
+        } catch (e) {
+          console.error('Failed to parse heal-fallback XML tool call', e)
+        }
+      }
+
+      // Check if we have tool calls to process
+      if (currentMessage.tool_calls && currentMessage.tool_calls.length > 0) {
+        const toolCall = currentMessage.tool_calls[0] as any
+        const { name, arguments: argsString } = toolCall.function
+        const args = JSON.parse(argsString || '{}')
+
+        // Handle Confirmation-Required Tools (post_...) - These MUST break the loop and return to client
+        if (name.startsWith('post_')) {
+          history.push(currentMessage)
+          const finalId = await saveHistory(supabase, user.id, history, activeChatId)
+          return NextResponse.json({
+            status: 'requires_confirmation',
+            toolCall: toolCall,
+            message: 'This action requires your confirmation before writing to Canvas.',
+            functionName: name,
+            arguments: args,
+            chatId: finalId
+          })
+        }
+
+        // Execute Tool
+        let resultString = ''
         try {
           if (name === 'save_user_memory') {
             const { error } = await supabase.from('user_memories').insert({
@@ -287,32 +325,29 @@ User Preferences/Memories: ${memories?.length ? memories.map(m => m.memory_text)
             if (error) throw new Error(error.message)
             resultString = "Memory saved successfully."
           } else if (name === 'get_assignment_details') {
-          resultString = JSON.stringify(await get_assignment_details(canvasKey, args.course_id, args.assignment_id))
-        } else if (name === 'get_active_courses') {
-            const courses = await get_active_courses(canvasKey);
-            resultString = JSON.stringify(courses);
+            resultString = JSON.stringify(await get_assignment_details(canvasKey, args.course_id, args.assignment_id))
+          } else if (name === 'get_active_courses') {
+            resultString = JSON.stringify(await get_active_courses(canvasKey))
           } else if (name === 'get_current_grades') {
-            const grades = await get_current_grades(canvasKey, args.course_id);
-            resultString = JSON.stringify(grades);
+            resultString = JSON.stringify(await get_current_grades(canvasKey, args.course_id))
           } else if (name === 'get_all_upcoming_assignments') {
-            const assignments = await get_all_upcoming_assignments(canvasKey);
-            resultString = JSON.stringify(assignments);
+            resultString = JSON.stringify(await get_all_upcoming_assignments(canvasKey))
           } else if (name === 'get_upcoming_assignments') {
-            const assignments = await get_upcoming_assignments(canvasKey, args.course_id);
-            resultString = JSON.stringify(assignments);
+            resultString = JSON.stringify(await get_upcoming_assignments(canvasKey, args.course_id))
+          } else if (name === 'log_missing_tool') {
+            await supabase.from('proposed_tools').insert({ user_id: user.id, requested_feature: args.requested_feature })
+            resultString = "Successfully logged requested feature to the developers."
           } else {
-            resultString = "Tool not implemented.";
+            resultString = "Tool not implemented."
           }
         } catch (err: any) {
-          if (err.message === '401_UNAUTHORIZED') {
-            resultString = "Your Canvas API key appears to be invalid or expired. Please update it in your settings.";
-          } else {
-            resultString = `Canvas API error: ${err.message}`;
-          }
+          resultString = err.message === '401_UNAUTHORIZED' 
+            ? "Your Canvas API key is invalid or expired." 
+            : `Canvas API error: ${err.message}`
         }
 
-        // Strip any raw XML before saving the intermediate tool-call message
-        const cleanedMsg = { ...message, content: stripToolCallXml(message.content) }
+        // Clean and push to history
+        const cleanedMsg = { ...currentMessage, content: stripToolCallXml(currentMessage.content) }
         history.push(cleanedMsg)
         history.push({
           role: 'tool',
@@ -321,79 +356,31 @@ User Preferences/Memories: ${memories?.length ? memories.map(m => m.memory_text)
           content: resultString
         })
 
-        const secondResponse = await openai.chat.completions.create({
+        // Get next response from AI
+        const nextResponse = await openai.chat.completions.create({
           model: 'qwen-3-235b-a22b-instruct-2507',
           messages: [
             { role: 'system', content: systemPrompt },
-            ...history.slice(-12).map((m: any) => ({
-               role: m.role,
-               content: m.content || '',
-               tool_calls: m.tool_calls,
-               tool_call_id: m.tool_call_id,
-               name: m.name
+            ...history.slice(-15).map((m: any) => ({
+              role: m.role,
+              content: m.content || '',
+              tool_calls: m.tool_calls,
+              tool_call_id: m.tool_call_id,
+              name: m.name
             }))
           ]
         })
-
-        const finalMsg = secondResponse.choices[0].message
-        history.push(finalMsg)
-        
-        await saveHistory(supabase, user.id, history, activeChatId)
-        return NextResponse.json({ ...finalMsg, chatId: activeChatId })
-
-      } else if (name === 'log_missing_tool') {
-        await supabase.from('proposed_tools').insert({
-          user_id: user.id,
-          requested_feature: args.requested_feature
-        })
-
-        history.push(message)
-        history.push({
-          role: 'tool',
-          tool_call_id: toolCall.id,
-          name: name,
-          content: "Successfully logged requested feature to the developers."
-        })
-
-        const secondResponse = await openai.chat.completions.create({
-          model: 'qwen-3-235b-a22b-instruct-2507',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            ...history.slice(-10).map((m: any) => ({
-               role: m.role,
-               content: m.content || '',
-               tool_calls: m.tool_calls,
-               tool_call_id: m.tool_call_id,
-               name: m.name
-            }))
-          ]
-        })
-
-        const finalMsg = secondResponse.choices[0].message
-        history.push(finalMsg)
-
-        await saveHistory(supabase, user.id, history, activeChatId)
-        return NextResponse.json({ ...finalMsg, chatId: activeChatId })
-
-      } else if (name.startsWith('post_')) {
-        history.push(message)
-        await saveHistory(supabase, user.id, history, activeChatId)
-        
-        return NextResponse.json({
-          status: 'requires_confirmation',
-          toolCall: toolCall,
-          message: 'This action requires your confirmation before writing to Canvas.',
-          functionName: name,
-          arguments: args,
-          chatId: activeChatId
-        })
+        currentMessage = nextResponse.choices[0].message as any
+      } else {
+        // No more tool calls, exit loop
+        break
       }
     }
 
-    history.push(message)
-    await saveHistory(supabase, user.id, history, activeChatId)
-
-    return NextResponse.json({ ...message, chatId: activeChatId })
+    // Final Save and Return
+    history.push(currentMessage)
+    const finalChatId = await saveHistory(supabase, user.id, history, activeChatId)
+    return NextResponse.json({ ...currentMessage, chatId: finalChatId })
 
   } catch (err: any) {
     console.error('API Error:', err)
