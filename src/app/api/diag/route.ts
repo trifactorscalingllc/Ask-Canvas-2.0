@@ -7,6 +7,11 @@ export async function GET() {
     const diagnostics: any = {
         env: {
             NEXT_PUBLIC_SUPABASE_URL: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+            SUPABASE_URL_METADATA: process.env.NEXT_PUBLIC_SUPABASE_URL ? {
+                length: process.env.NEXT_PUBLIC_SUPABASE_URL.length,
+                startsWithHttps: process.env.NEXT_PUBLIC_SUPABASE_URL.startsWith('https://'),
+                prefix: process.env.NEXT_PUBLIC_SUPABASE_URL.substring(0, 8),
+            } : 'MISSING',
             SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
             CEREBRAS_API_KEY: !!process.env.CEREBRAS_API_KEY,
         },
