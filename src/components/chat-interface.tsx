@@ -4,6 +4,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Send, ThumbsUp, ThumbsDown, ExternalLink } from 'lucide-react';
 import { submitFeedback } from '@/app/actions/feedback';
+import { MermaidVisual, FileEmbed } from './chat-visuals';
 
 export interface Message {
   id: string;
@@ -56,30 +57,51 @@ function AssistantBubble({ message, isLast, onFeedback, feedbackState }: {
     if (isNew) setPrevMessages(prev => [...prev, message.id]);
   }, [message.id, isNew]);
 
-  const { displayed, done } = useTypedText(isNew ? message.content : message.content, isNew ? 8 : 0);
+  const { displayed, done } = useTypedText(isNew ? message.content : message.content, isNew ? 6 : 0);
   const shown = isNew ? displayed : message.content;
 
   return (
     <div className="flex justify-start gap-3 animate-in fade-in slide-in-from-left-3 duration-400">
       {/* Robot Avatar */}
       <div className="shrink-0 w-9 h-9 rounded-full overflow-hidden border-2 border-blue-100 shadow-sm mt-1 bg-white">
-        <img src="/agent-avatar.png" alt="Agent" className="w-full h-full object-cover scale-[1.15] object-top" />
+        <img src="/agent-avatar.png" alt="Agent" className="w-full h-full object-cover scale-[1.3] object-top" />
       </div>
-      <div className="max-w-[80%] md:max-w-[72%] bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-2xl rounded-bl-sm px-5 py-3.5 shadow-sm">
-        <div className="prose prose-blue prose-sm dark:prose-invert">
+      <div className="max-w-[90%] md:max-w-[85%] bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-2xl rounded-bl-sm px-6 py-4 shadow-sm relative mr-4">
+        <div className="prose prose-blue prose-sm dark:prose-invert max-w-none overflow-x-hidden">
           <ReactMarkdown
             components={{
-              a: ({ href, children }) => (
-                <a 
-                  href={href} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white !no-underline rounded-lg text-xs font-semibold transition-all hover:scale-[1.02] active:scale-95 shadow-sm my-1"
-                >
-                  {children}
-                  <ExternalLink className="w-3 h-3 opacity-80" />
-                </a>
-              )
+              code: ({ className, children, ...props }: any) => {
+                const match = /language-(\w+)/.exec(className || '')
+                const value = String(children).replace(/\n$/, '')
+                if (match && match[1] === 'mermaid') {
+                  return <MermaidVisual chart={value} />
+                }
+                return (
+                  <code className={className} {...props}>
+                    {children}
+                  </code>
+                )
+              },
+              a: ({ href, children }) => {
+                // Check if it's a file embed request
+                if (href?.startsWith('embed:')) {
+                  const actualUrl = href.replace('embed:', '')
+                  return <FileEmbed url={actualUrl} title={String(children)} type="pdf" />
+                }
+                
+                // standard button link
+                return (
+                  <a 
+                    href={href} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white !no-underline rounded-lg text-xs font-semibold transition-all hover:scale-[1.02] active:scale-95 shadow-sm my-1"
+                  >
+                    {children}
+                    <ExternalLink className="w-3 h-3 opacity-80" />
+                  </a>
+                )
+              }
             }}
           >
             {shown}
@@ -116,7 +138,7 @@ function ThinkingBubble() {
   return (
     <div className="flex justify-start gap-3 animate-in fade-in slide-in-from-left-3 duration-300">
       <div className="shrink-0 w-9 h-9 rounded-full overflow-hidden border-2 border-blue-100 shadow-sm mt-1 bg-white">
-        <img src="/agent-avatar.png" alt="Agent thinking" className="w-full h-full object-cover scale-[1.15] object-top" />
+        <img src="/agent-avatar.png" alt="Agent thinking" className="w-full h-full object-cover scale-[1.3] object-top" />
       </div>
       <div className="bg-gray-100 dark:bg-gray-800 rounded-2xl rounded-bl-sm px-5 py-4 shadow-sm flex items-center gap-1.5">
         <span className="w-2 h-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }} />
