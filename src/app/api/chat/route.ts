@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { decrypt } from '@/lib/crypto'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60 // Allow 60 seconds for multi-step AI reasoning
+export const maxDuration = 60
 import {
   get_active_courses,
   get_current_grades,
@@ -18,6 +19,81 @@ const openai = new OpenAI({
   baseURL: 'https://api.cerebras.ai/v1',
   apiKey: process.env.CEREBRAS_API_KEY || 'dummy_key',
 })
+
+// ── Service-role Supabase client (Lazy loaded to prevent build crashes) ───────
+let _supabaseService: any = null
+function getSupabaseService() {
+  if (_supabaseService) return _supabaseService
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) {
+    console.warn('Logging skipped: Supabase Service Role credentials missing.')
+    return null
+  }
+  _supabaseService = createServiceClient(url, key)
+  return _supabaseService
+}
+
+// ── Error Logger ─────────────────────────────────────────────────────────────
+function classifyError(err: any): { error_type: string; problem_identifier: string } {
+  const msg = String(err?.message || err || '')
+  const status = err?.status ?? err?.statusCode
+
+  if (status === 429 || msg.includes('429')) return {
+    error_type: 'rate_limit',
+    problem_identifier: 'AI engine rate limited — too many requests sent in a short period. Consider adding request throttling.'
+  }
+  if (status === 401 || msg.includes('401') || msg.includes('UNAUTHORIZED')) return {
+    error_type: 'canvas_auth',
+    problem_identifier: "User's Canvas API key is invalid or expired. They need to update it in Settings."
+  }
+  if (msg.includes('canvas') || msg.includes('Canvas')) return {
+    error_type: 'canvas_api',
+    problem_identifier: `Canvas API call failed: ${msg.slice(0, 120)}`
+  }
+  if (msg.includes('cerebras') || msg.includes('openai') || msg.includes('stream')) return {
+    error_type: 'ai_engine',
+    problem_identifier: `AI engine (Cerebras) error: ${msg.slice(0, 120)}`
+  }
+  if (msg.includes('supabase') || msg.includes('postgres')) return {
+    error_type: 'database',
+    problem_identifier: `Database error: ${msg.slice(0, 120)}`
+  }
+  if (msg.includes('timeout') || msg.includes('AbortError')) return {
+    error_type: 'timeout',
+    problem_identifier: 'Request timed out — the AI took longer than the allowed window to respond.'
+  }
+  return {
+    error_type: 'unknown',
+    problem_identifier: `Unclassified error: ${msg.slice(0, 180)}`
+  }
+}
+
+async function logError(opts: {
+  userId?: string
+  userPrompt?: string
+  agentResponse?: string
+  err: any
+  context?: Record<string, any>
+}) {
+  try {
+    const service = getSupabaseService()
+    if (!service) return
+
+    const { error_type, problem_identifier } = classifyError(opts.err)
+    await service.from('error_logs').insert({
+      user_id: opts.userId ?? null,
+      user_prompt: opts.userPrompt ?? null,
+      agent_response: opts.agent_response ?? null,
+      error_type,
+      error_message: String(opts.err?.message ?? opts.err ?? '').slice(0, 2000),
+      problem_identifier,
+      context: opts.context ?? null
+    })
+  } catch (logErr) {
+    console.error('Failed to write error log:', logErr)
+  }
+}
 
 /** Remove any <tool_call>...</tool_call> XML that Qwen sometimes emits inline */
 function stripToolCallXml(content: string | null | undefined): string {
@@ -132,321 +208,153 @@ const tools = [
 ]
 
 export async function POST(req: Request) {
+  let user: any = null
+  let lastUserPrompt = ''
+
   try {
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const { data: { user: authUser } } = await supabase.auth.getUser()
+    user = authUser
 
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await req.json()
     const { messages: incomingMessages, pendingToolCall, toolResult, chatId } = body
 
     if (!process.env.CEREBRAS_API_KEY) {
-      return NextResponse.json({ error: 'CEREBRAS_API_KEY is missing from the Server Environment Variables! The AI Engine cannot power on.' }, { status: 500 })
+      return NextResponse.json({ error: 'CEREBRAS_API_KEY is missing!' }, { status: 500 })
     }
 
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('encrypted_canvas_key, iv, canvas_cache, name, avatar_url')
-      .eq('id', user.id)
-      .single()
+    const { data: userData } = await supabase.from('users').select('*').eq('id', user.id).single()
+    if (!userData?.encrypted_canvas_key) return NextResponse.json({ error: 'Canvas key missing' }, { status: 400 })
 
-    const { data: memories } = await supabase
-      .from('user_memories')
-      .select('memory_text')
-      .eq('user_id', user.id)
+    const canvasKey = decrypt(userData.encrypted_canvas_key, userData.iv)
 
-    if (userError || !userData || !userData.encrypted_canvas_key || !userData.iv) {
-      return NextResponse.json({ error: 'User setup incomplete or Canvas key missing' }, { status: 400 })
-    }
+    // Parallel Hydration + Memories
+    const [memories, _] = await Promise.all([
+      supabase.from('user_memories').select('memory_text').eq('user_id', user.id),
+      (!userData.canvas_cache || !userData.name) ? (async () => {
+        try {
+          const [c, p] = await Promise.all([get_active_courses(canvasKey), get_user_profile(canvasKey)])
+          await supabase.from('users').update({
+            canvas_cache: c,
+            name: p.short_name || p.name,
+            avatar_url: p.avatar_url
+          }).eq('id', user.id)
+        } catch { }
+      })() : Promise.resolve()
+    ])
 
-    let canvasKey = ''
-    try {
-      canvasKey = decrypt(userData.encrypted_canvas_key, userData.iv)
-    } catch {
-      return NextResponse.json({ error: 'Decryption failed' }, { status: 500 })
-    }
-
-    // Lazy Hydration of Cold Data & Profile
-    if (!userData.canvas_cache || !userData.name) {
-      try {
-        const updates: any = {}
-        if (!userData.canvas_cache) {
-          const courses = await get_active_courses(canvasKey)
-          updates.canvas_cache = courses
-          userData.canvas_cache = courses
-        }
-        if (!userData.name) {
-          const profile = await get_user_profile(canvasKey)
-          updates.name = profile.short_name || profile.name
-          updates.avatar_url = profile.avatar_url
-          userData.name = updates.name
-          userData.avatar_url = updates.avatar_url
-        }
-
-        if (Object.keys(updates).length > 0) {
-          await supabase.from('users').update(updates).eq('id', user.id)
-        }
-      } catch (e) {
-        console.error('Failed to lazy-hydrate canvas metadata', e)
-      }
-    }
-
+    // History
     let history: any[] = []
-
     if (chatId) {
-      const { data: chatData } = await supabase
-        .from('chats')
-        .select('messages')
-        .eq('id', chatId)
-        .eq('user_id', user.id)
-        .maybeSingle()
-      history = Array.isArray(chatData?.messages) ? chatData?.messages : []
+      const { data: cd } = await supabase.from('chats').select('messages').eq('id', chatId).single()
+      history = cd?.messages || []
     }
-
-    if (incomingMessages && incomingMessages.length > 0) {
-      const newMsg = incomingMessages[incomingMessages.length - 1]
-      if (newMsg.role === 'user') {
-        history.push(newMsg)
-      }
+    if (incomingMessages?.length) {
+      const nm = incomingMessages[incomingMessages.length - 1]
+      if (nm.role === 'user') { history.push(nm); lastUserPrompt = nm.content || ''; }
     }
+    if (toolResult && pendingToolCall) { history.push(pendingToolCall); history.push(toolResult); }
 
-    if (toolResult && pendingToolCall) {
-      history.push(pendingToolCall)
-      history.push(toolResult)
-    }
-
-    // [New Architecture] Save the User's exact prompt to the Database FIRST!
     const activeChatId = await saveHistory(supabase, user.id, history, chatId)
 
-    const recentHistory = history.slice(-10)
-
-    const systemPrompt = `You are the "Ask Canvas" Academic Assistant—a premium, visually structured tutor.
-Your goal is to provide high-clarity, academically rigorous responses with a PRECISE visual identity.
-
-[VISUAL IDENTITY & FORMATTING RULES]
-1. HIERARCHY: 
-   - Use ONE # H1 for the main topic/title.
-   - Use ## H2 with "---" dividers for major sections.
-   - Use ### H3 for sub-points.
-2. EMPHASIS & COLOR:
-   - Use **Bold** for critical terms.
-   - Use <u>Underline</u> (HTML tag) for academic definitions or key concepts.
-   - Use \`Inline Code\` for technical names or variables.
-3. STRUCTURE: 
-   - Never use giant walls of text. 
-   - Use nested bullet points (indenting) for hierarchical concepts.
-   - Use Blockquotes for formulas or "Pro-Tips".
-4. VISUALS (MANDATORY):
-   - For ANY conceptual, study-related, or "how does this work" query, you MUST generate a Mermaid diagram.
-   - Use the ${'```'}mermaid${'```'} syntax.
-   - Prefer 'graph TD' (Top-Down) or 'graph LR' (Left-Right) for flows.
-   - Prefer 'mindmap' for brainstorming or broad subject overviews.
-5. COURSE CONTEXT:
-   - Always reference the specific Course Name (e.g., ECON 102) if known.
-   - If a file is relevant, provide a link button using [Title](embed:URL) syntax to embed it or [Title](URL) for external access.
-
-[KNOWN USER CONTEXT]
-First Name: ${userData.name ? userData.name.split(' ')[0] : "Student"}
-Active Courses (Canvas ID Mapping): ${userData.canvas_cache ? JSON.stringify(userData.canvas_cache) : "Unknown"}
-
-INSTRUCTIONS FOR DATA ACCESS:
-- IF 'Active Courses' above has a list, YOU ALREADY HAVE THE IDs. DO NOT call get_active_courses.
-- Use the numeric ID directly from the list above.
-- If you have the data, PROCEED IMMEDIATELY TO THE FINAL RESPONSE.
-- User Preferences/Memories: ${memories?.length ? memories.map(m => m.memory_text).join('; ') : "None"}`
-
-    let response;
-    try {
-      response = await openai.chat.completions.create({
-        model: 'qwen-3-235b-a22b-instruct-2507',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          ...recentHistory.map((m: any) => ({
-            role: m.role,
-            content: m.content || '',
-            tool_calls: m.tool_calls,
-            tool_call_id: m.tool_call_id,
-            name: m.name
-          }))
-        ],
-        tools: tools as any,
-        tool_choice: 'auto',
-      })
-    } catch (engineError: any) {
-      if (engineError.status === 404) {
-        throw new Error(`The requested AI model string does not exist in the provider's registry (404 Not Found). Please verify the exact model ID spelling.`);
-      }
-      throw engineError;
-    }
-
-    let currentMessage = response.choices[0].message as any
-    let iterations = 0
-    const maxIterations = 5
-
-    while (iterations < maxIterations) {
-      iterations++
-
-      // [HEALING] Fallback for models that drift into XML tool-calling
-      if (!currentMessage.tool_calls && currentMessage.content?.includes('<tool_call>')) {
-        try {
-          const match = /<tool_call>\s*({[\s\S]*?})\s*<\/tool_call>/i.exec(currentMessage.content)
-          if (match) {
-            const parsed = JSON.parse(match[1])
-            currentMessage.tool_calls = [{
-              id: `call_fb_${Math.random().toString(36).substr(2, 5)}`,
-              type: 'function',
-              function: {
-                name: parsed.name,
-                arguments: typeof parsed.arguments === 'string' ? parsed.arguments : JSON.stringify(parsed.arguments)
-              }
-            }]
-          }
-        } catch (e) {
-          console.error('Failed to parse heal-fallback XML tool call', e)
-        }
-      }
-
-      // Check if we have tool calls to process
-      if (currentMessage.tool_calls && currentMessage.tool_calls.length > 0) {
-
-        // Handle Confirmation-Required Tools (post_...) - These break the loop immediately
-        const postCall = currentMessage.tool_calls.find((tc: any) => tc.function.name.startsWith('post_'))
-        if (postCall) {
-          history.push(currentMessage)
-          const finalId = await saveHistory(supabase, user.id, history, activeChatId)
-          return NextResponse.json({
-            status: 'requires_confirmation',
-            toolCall: postCall,
-            message: 'This action requires your confirmation before writing to Canvas.',
-            functionName: postCall.function.name,
-            arguments: JSON.parse(postCall.function.arguments || '{}'),
-            chatId: finalId
-          })
-        }
-
-        // Parallel Execute ALL Tool Calls in the array
-        const results = await Promise.all(currentMessage.tool_calls.map(async (toolCall: any) => {
-          const { name, arguments: argsString } = toolCall.function
-          const args = JSON.parse(argsString || '{}')
-          let resultString = ''
-
-          try {
-            if (name === 'save_user_memory') {
-              const { error } = await supabase.from('user_memories').insert({ user_id: user.id, memory_text: args.preference_text })
-              if (error) throw new Error(error.message)
-              resultString = "Memory saved successfully."
-            } else if (name === 'get_assignment_details') {
-              resultString = JSON.stringify(await get_assignment_details(canvasKey, args.course_id, args.assignment_id))
-            } else if (name === 'get_active_courses') {
-              resultString = JSON.stringify(await get_active_courses(canvasKey))
-            } else if (name === 'get_current_grades') {
-              resultString = JSON.stringify(await get_current_grades(canvasKey, args.course_id))
-            } else if (name === 'get_all_upcoming_assignments') {
-              resultString = JSON.stringify(await get_all_upcoming_assignments(canvasKey))
-            } else if (name === 'get_upcoming_assignments') {
-              resultString = JSON.stringify(await get_upcoming_assignments(canvasKey, args.course_id))
-            } else if (name === 'log_missing_tool') {
-              await supabase.from('proposed_tools').insert({ user_id: user.id, requested_feature: args.requested_feature })
-              resultString = "Successfully logged requested feature to the developers."
-            } else {
-              resultString = "Tool not implemented."
-            }
-          } catch (err: any) {
-            resultString = err.message === '401_UNAUTHORIZED'
-              ? "Your Canvas API key is invalid or expired."
-              : `Canvas API error: ${err.message}`
-          }
-
-          return {
-            role: 'tool',
-            tool_call_id: toolCall.id,
-            name: name,
-            content: resultString
-          }
-        }))
-
-        // Push messages to history
-        const cleanedMsg = { ...currentMessage, content: stripToolCallXml(currentMessage.content) }
-        history.push(cleanedMsg)
-        results.forEach(res => history.push(res))
-
-        // Get next response with retry for 429s
-        let retryCount = 0
-        let nextResponse: any = null
-        while (retryCount < 3) {
-          try {
-            nextResponse = await openai.chat.completions.create({
-              model: 'qwen-3-235b-a22b-instruct-2507',
-              messages: [
-                { role: 'system', content: systemPrompt },
-                ...history.slice(-15).map((m: any) => ({
-                  role: m.role,
-                  content: m.content || '',
-                  tool_calls: m.tool_calls,
-                  tool_call_id: m.tool_call_id,
-                  name: m.name
-                }))
-              ]
-            })
-            break
-          } catch (err: any) {
-            if (err.status === 429 && retryCount < 2) {
-              retryCount++
-              await new Promise(r => setTimeout(r, 1000 * retryCount)) // Linear backoff
-              continue
-            }
-            throw err
-          }
-        }
-        if (!nextResponse) break;
-        currentMessage = nextResponse.choices[0].message as any
-      } else {
-        break
-      }
-    }
-
-    // ── Final Streaming Response ──────────────────────────────────────────────
-    // Tool loop is done. Now stream the final text response token-by-token.
-    const streamResponse = await openai.chat.completions.create({
-      model: 'qwen-3-235b-a22b-instruct-2507',
-      stream: true,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...history.slice(-15).map((m: any) => ({
-          role: m.role,
-          content: m.content || '',
-          tool_calls: m.tool_calls,
-          tool_call_id: m.tool_call_id,
-          name: m.name
-        }))
-      ]
-    })
-
-    // Build + stream simultaneously
-    let assembled = ''
-
+    // THE STREAMING RESPONSE
+    const encoder = new TextEncoder()
     const readable = new ReadableStream({
       async start(controller) {
-        const encoder = new TextEncoder()
+        const send = (txt: string) => controller.enqueue(encoder.encode(txt))
 
         try {
-          for await (const chunk of streamResponse) {
-            const token = chunk.choices[0]?.delta?.content ?? ''
-            if (token) {
-              assembled += token
-              controller.enqueue(encoder.encode(token))
+          // Pulse immediate feedback to keep Vercel alive
+          send("Thinking...")
+
+          // Greedy Fetch (Parallel with initial model call if possible)
+          const isAcademic = /grade|assignment|due|upcoming|exam|test|quiz|econ|syllabus/.test(lastUserPrompt.toLowerCase())
+          const preFetched = isAcademic ? await get_all_upcoming_assignments(canvasKey, userData.canvas_cache) : null
+
+          if (preFetched) send("\n(Accessed Canvas schedule)")
+
+          let systemPrompt = `You are the "Ask Canvas" Assistant.
+[CONTEXT]
+Name: ${userData.name || "Student"}
+Courses: ${JSON.stringify(userData.canvas_cache || [])}
+Pre-fetched Assignments: ${JSON.stringify(preFetched || [])}
+Memories: ${memories.data?.map(m => m.memory_text).join('; ') || 'None'}
+[RULES]
+- Use Markdown.
+- If pre-fetched assignments exist, answer IMMEDIATELY without tools.
+- If data is missing, use tools.`
+
+          let currentHistory = [...history.slice(-10)]
+          let iterations = 0
+          let assembled = ''
+          let loopFinished = false
+
+          while (iterations < 5 && !loopFinished) {
+            iterations++
+
+            const completion = await openai.chat.completions.create({
+              model: 'qwen-3-235b-a22b-instruct-2507',
+              messages: [{ role: 'system', content: systemPrompt }, ...currentHistory],
+              tools: tools as any,
+              tool_choice: 'auto'
+            })
+
+            const msg = completion.choices[0].message as any
+
+            if (msg.tool_calls?.length) {
+              send("\n(Processing Canvas data...)")
+
+              const results = await Promise.all(msg.tool_calls.map(async (tc: any) => {
+                const name = tc.function.name
+                const args = JSON.parse(tc.function.arguments || '{}')
+                let res = ''
+                try {
+                  if (name === 'get_all_upcoming_assignments') res = JSON.stringify(await get_all_upcoming_assignments(canvasKey, userData.canvas_cache))
+                  else if (name === 'get_active_courses') res = JSON.stringify(await get_active_courses(canvasKey))
+                  else if (name === 'get_current_grades') res = JSON.stringify(await get_current_grades(canvasKey, args.course_id))
+                  else if (name === 'get_upcoming_assignments') res = JSON.stringify(await get_upcoming_assignments(canvasKey, args.course_id))
+                  else res = "Tool not found"
+                } catch { res = "Error accessing Canvas" }
+                return { role: 'tool', tool_call_id: tc.id, name, content: res }
+              }))
+
+              currentHistory.push(msg)
+              results.forEach(r => currentHistory.push(r))
+            } else {
+              // Final Text turn - switch to REAL streaming for the finish
+              loopFinished = true
+
+              const finalStream = await openai.chat.completions.create({
+                model: 'qwen-3-235b-a22b-instruct-2507',
+                stream: true,
+                messages: [{ role: 'system', content: systemPrompt }, ...currentHistory]
+              })
+
+              // Clear the "Thinking..." pulse before final output
+              // Note: We can't really "delete" tokens already sent, so we shift to a new paragraph
+              send("\n\n---\n\n")
+
+              for await (const chunk of finalStream) {
+                const token = chunk.choices[0]?.delta?.content ?? ''
+                if (token) {
+                  assembled += token
+                  send(token)
+                }
+              }
             }
           }
-        } catch (streamErr) {
-          console.error('Stream error:', streamErr)
-        } finally {
-          // Save full assembled message to Supabase after stream ends
-          const finalMsg = { role: 'assistant', content: assembled }
-          history.push(finalMsg)
+
+          // Persist history
+          history.push({ role: 'assistant', content: assembled })
           await saveHistory(supabase, user.id, history, activeChatId)
+
+        } catch (err: any) {
+          console.error(err)
+          send(`\n\n[Error]: ${err.message}`)
+          await logError({ userId: user?.id, userPrompt: lastUserPrompt, err })
+        } finally {
           controller.close()
         }
       }
@@ -455,30 +363,22 @@ INSTRUCTIONS FOR DATA ACCESS:
     return new Response(readable, {
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
-        'X-Chat-Id': activeChatId ?? '',
         'Cache-Control': 'no-cache',
         'X-Accel-Buffering': 'no',
       }
     })
 
   } catch (err: any) {
-    console.error('API Error:', err)
-    const status = err.status || 500
-    const message = err.status === 429
-      ? "The AI engine is a bit busy right now. Please try again in a few seconds."
-      : err.message
-    return NextResponse.json({ error: message }, { status })
+    return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
 
 async function saveHistory(supabase: any, userId: string, history: any[], chatId?: string) {
   if (chatId) {
-    const { error: updateError } = await supabase.from('chats').update({ messages: history, updated_at: new Date().toISOString() }).eq('id', chatId)
-    if (updateError) console.error('SaveHistory Update Error:', updateError)
-    return chatId;
+    await supabase.from('chats').update({ messages: history, updated_at: new Date().toISOString() }).eq('id', chatId)
+    return chatId
   } else {
-    const { data: insertData, error: insertError } = await supabase.from('chats').insert({ user_id: userId, messages: history }).select('id').maybeSingle()
-    if (insertError) console.error('SaveHistory Insert Error:', insertError)
-    return insertData?.id;
+    const { data } = await supabase.from('chats').insert({ user_id: userId, messages: history }).select('id').single()
+    return data?.id
   }
 }

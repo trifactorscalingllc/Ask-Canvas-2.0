@@ -22,19 +22,19 @@ export async function fetchCanvas(endpoint: string, token: string, domain: strin
 export async function get_active_courses(token: string) {
   const data = await fetchCanvas('/api/v1/courses?enrollment_state=active', token);
   if (!Array.isArray(data)) return [];
-  
+
   const mapped = data.map((c: any) => ({
     id: c.id,
     name: c.name,
     course_code: c.course_code,
-  })).filter(c => c.id && c.name); 
+  })).filter(c => c.id && c.name);
 
   return mapped.slice(0, 10);
 }
 
 export async function get_current_grades(token: string, course_id: string) {
   const data = await fetchCanvas(`/api/v1/courses/${course_id}?include[]=total_scores`, token);
-  
+
   const enrollments = data.enrollments || [];
   const currentGrade = enrollments[0]?.computed_current_grade || 'N/A';
   const currentScore = enrollments[0]?.computed_current_score || 'N/A';
@@ -65,8 +65,8 @@ export async function get_upcoming_assignments(token: string, course_id: string)
  * Fetches assignments across ALL active courses in parallel.
  * Returns a flat list sorted by due date, limited to the next 30 upcoming items.
  */
-export async function get_all_upcoming_assignments(token: string) {
-  const courses = await get_active_courses(token);
+export async function get_all_upcoming_assignments(token: string, existingCourses?: any[]) {
+  const courses = existingCourses || await get_active_courses(token);
 
   const results = await Promise.allSettled(
     courses.map(async (course: any) => {
@@ -112,7 +112,7 @@ export async function get_user_profile(canvasKey: string) {
 
 export async function get_assignment_details(token: string, course_id: string, assignment_id: string) {
   const data = await fetchCanvas(`/api/v1/courses/${course_id}/assignments/${assignment_id}`, token);
-  
+
   return {
     id: data.id,
     name: data.name,
