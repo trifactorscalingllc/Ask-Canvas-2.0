@@ -68,7 +68,6 @@ export async function get_all_upcoming_assignments(token: string, existingCourse
 
   if (courseFilter) {
     const filter = courseFilter.toLowerCase();
-    // Use a broader search for course specific fragments
     courses = courses.filter((c: any) =>
       c.name.toLowerCase().includes(filter) ||
       c.course_code?.toLowerCase().includes(filter) ||
@@ -76,29 +75,45 @@ export async function get_all_upcoming_assignments(token: string, existingCourse
     );
   }
 
-  // If we identify a specific course, fetch a bit more for it
-  const perPage = courseFilter ? 40 : 15;
+  const now = new Date();
+  // Fetch up to 50 assignments per course to ensure we don't miss high-volume classes
+  const perPage = 50;
 
   const results = await Promise.allSettled(
     courses.map(async (course: any) => {
       try {
+        // REMOVED 'bucket=upcoming' to get EVERYTHING, then we filter manually for fidelity
         const fetchPromise = fetchCanvas(
-          `/api/v1/courses/${course.id}/assignments?bucket=upcoming&per_page=${perPage}`,
+          `/api/v1/courses/${course.id}/assignments?per_page=${perPage}&order_by=due_at`,
           token
         );
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 5000));
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 8000));
 
         const data: any = await Promise.race([fetchPromise, timeoutPromise]);
 
         if (!Array.isArray(data)) return [];
-        return data.map((a: any) => ({
-          course: course.name,
-          course_id: course.id,
-          name: a.name,
-          due_at: a.due_at,
-          points_possible: a.points_possible,
-          html_url: a.html_url,
-        }));
+
+        return data
+          .map((a: any) => ({
+            course: course.name,
+            course_id: course.id,
+            semester: course.term?.name || 'Unknown',
+            term_end: course.term?.end_at,
+            name: a.name,
+            due_at: a.due_at,
+            points_possible: a.points_possible,
+            html_url: a.html_url,
+            is_graded: !!a.graded_at || !!a.submission?.graded_at,
+          }))
+          .filter((a: any) => {
+            // FIDELITY FILTER: Only include if NOT graded OR due in the next 3 weeks
+            if (!a.due_at) return !a.is_graded; // Keep undated items if not graded
+            const dueDate = new Date(a.due_at);
+            const threeWeeksOut = new Date(now.getTime() + 21 * 24 * 60 * 60 * 1000);
+            const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+            return !a.is_graded && dueDate > oneDayAgo && dueDate < threeWeeksOut;
+          });
       } catch (err) {
         console.warn(`[CANVAS FETCH ERROR] Course ${course.id}: ${err}`);
         return [];
@@ -109,10 +124,13 @@ export async function get_all_upcoming_assignments(token: string, existingCourse
   const all = results
     .filter((r) => r.status === 'fulfilled')
     .flatMap((r: any) => r.value)
-    .filter((a: any) => a.due_at)
-    .sort((a: any, b: any) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime());
+    .sort((a: any, b: any) => {
+      if (!a.due_at) return 1;
+      if (!b.due_at) return -1;
+      return new Date(a.due_at).getTime() - new Date(b.due_at).getTime();
+    });
 
-  return all.slice(0, 100);
+  return all.slice(0, 50); // Final summary limit
 }
 
 export async function get_user_profile(canvasKey: string) {
