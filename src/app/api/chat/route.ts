@@ -240,7 +240,7 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
           await saveHistory(supabase, user.id, history, activeChatId)
 
         } catch (err: any) {
-          send("\n\n(Connection Stress) The network is busy. I've saved the partial response to your chat history. Please refresh.")
+          send("\n\n(Connection Trace: v2.0.1-perf) The network is busy. I've saved the partial response to your chat history. Please refresh if this persists.")
           await logError({ userId: user?.id, userPrompt: lastPrompt, err })
         } finally {
           if (heartbeat) clearInterval(heartbeat)

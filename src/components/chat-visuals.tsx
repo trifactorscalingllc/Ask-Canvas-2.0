@@ -24,16 +24,18 @@ export const MermaidVisual = React.memo(({ chart }: { chart: string }) => {
 
   useEffect(() => {
     let isMounted = true;
-    
+
     async function render() {
       if (!chart || chart.trim().length === 0) return
       setIsProcessing(true)
-      
+
       try {
         const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`
-        // Basic syntax check for very common AI hallucinations
-        let cleanedChart = chart.trim()
-        if (cleanedChart.startsWith('```mermaid')) cleanedChart = cleanedChart.replace('```mermaid', '').replace('```', '')
+        // Strip invisible heartbeats (\u200B) and basic AI hallucinations
+        let cleanedChart = chart.replace(/[\u200B-\u200D\uFEFF]/g, '').trim()
+        if (cleanedChart.startsWith('```mermaid')) {
+          cleanedChart = cleanedChart.replace('```mermaid', '').replace('```', '')
+        }
 
         const { svg: renderedSvg } = await mermaid.render(id, cleanedChart)
         if (isMounted) {
@@ -53,7 +55,7 @@ export const MermaidVisual = React.memo(({ chart }: { chart: string }) => {
   }, [chart])
 
   if (error) return <div className="text-xs text-red-400 bg-red-950/20 p-3 rounded-lg border border-red-900/50 my-2">{error}</div>
-  
+
   if (isProcessing && !svg) {
     return (
       <div className="w-full my-6 p-12 bg-gray-900/5 rounded-2xl border border-dashed border-gray-300 dark:border-gray-700 flex flex-col items-center gap-3 animate-pulse">
@@ -67,7 +69,7 @@ export const MermaidVisual = React.memo(({ chart }: { chart: string }) => {
 
   return (
     <div className="w-full my-6 flex flex-col items-center gap-3 group">
-      <div 
+      <div
         className="w-full bg-white dark:bg-gray-950 p-6 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm flex justify-center animate-in fade-in slide-in-from-bottom-2 duration-700 overflow-x-auto min-h-[100px] hover:border-blue-200 dark:hover:border-blue-900 transition-colors"
         dangerouslySetInnerHTML={{ __html: svg }}
       />
@@ -100,23 +102,23 @@ export function FileEmbed({ url, title, type = 'pdf' }: { url: string; title?: s
         <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2.5 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">
           <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-tighter truncate pr-4">{title || 'Document View'}</span>
           <div className="flex gap-2">
-            <button 
+            <button
               onClick={() => setIsExpanded(!isExpanded)}
               className="text-[10px] font-bold bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 px-3 py-1 rounded-md border border-gray-200 dark:border-gray-700 transition-all shadow-sm active:scale-95"
             >
               {isExpanded ? 'Minimize' : 'Expand View'}
             </button>
-            <a 
-              href={url} 
-              target="_blank" 
+            <a
+              href={url}
+              target="_blank"
               className="text-[10px] font-bold bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-md transition-all shadow-sm active:scale-95"
             >
               Open Original
             </a>
           </div>
         </div>
-        <iframe 
-          src={url} 
+        <iframe
+          src={url}
           className="w-full h-full border-none bg-gray-100 dark:bg-gray-900"
           title={title || 'File Viewer'}
         />
