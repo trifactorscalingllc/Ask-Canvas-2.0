@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { NavIcons } from './nav-icons'
+import { MarketingNav } from './marketing-nav'
 
 export async function HeaderNavbar() {
   const supabase = await createClient()
@@ -23,11 +24,7 @@ export async function HeaderNavbar() {
             <Link href="/" className="text-xl font-bold tracking-tighter text-slate-900">
               Ask Canvas
             </Link>
-            <nav className="hidden md:flex items-center gap-8">
-              <Link href="/" className="text-blue-700 font-semibold border-b-2 border-blue-600 transition-colors text-sm">Product</Link>
-              <Link href="/#how-it-works" className="text-slate-600 hover:text-slate-900 transition-colors text-sm">How it Works</Link>
-              <Link href="/#security" className="text-slate-600 hover:text-slate-900 transition-colors text-sm">Security</Link>
-            </nav>
+            <MarketingNav />
           </div>
           <div className="flex items-center gap-4">
             <Link href="/login" className="hidden sm:block text-slate-600 hover:text-slate-900 font-medium px-4 py-2 transition-all text-sm">
