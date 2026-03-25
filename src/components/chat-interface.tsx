@@ -18,6 +18,8 @@ interface ChatInterfaceProps {
   sendMessage: (e: React.FormEvent) => void;
   isLoading: boolean;
   userEmail?: string;
+  userName?: string;
+  userAvatar?: string;
 }
 
 // ── Typing animation hook ────────────────────────────────────────────────────
@@ -60,8 +62,8 @@ function AssistantBubble({ message, isLast, onFeedback, feedbackState }: {
   return (
     <div className="flex justify-start gap-3 animate-in fade-in slide-in-from-left-3 duration-400">
       {/* Robot Avatar */}
-      <div className="shrink-0 w-9 h-9 rounded-full overflow-hidden border-2 border-blue-100 shadow-sm mt-1 bg-white">
-        <img src="/agent-avatar.png" alt="Agent" className="w-full h-full object-cover" />
+      <div className="shrink-0 w-9 h-9 rounded-lg overflow-hidden border border-blue-100 shadow-sm mt-1 bg-white">
+        <img src="/agent-avatar.png" alt="Agent" className="w-full h-full object-cover scale-110 object-top" />
       </div>
       <div className="max-w-[80%] md:max-w-[72%] bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-2xl rounded-bl-sm px-5 py-3.5 shadow-sm">
         <div className="prose prose-blue prose-sm dark:prose-invert">
@@ -97,8 +99,8 @@ function AssistantBubble({ message, isLast, onFeedback, feedbackState }: {
 function ThinkingBubble() {
   return (
     <div className="flex justify-start gap-3 animate-in fade-in slide-in-from-left-3 duration-300">
-      <div className="shrink-0 w-9 h-9 rounded-full overflow-hidden border-2 border-blue-100 shadow-sm mt-1 bg-white">
-        <img src="/agent-avatar.png" alt="Agent thinking" className="w-full h-full object-cover" />
+      <div className="shrink-0 w-9 h-9 rounded-lg overflow-hidden border border-blue-100 shadow-sm mt-1 bg-white">
+        <img src="/agent-avatar.png" alt="Agent thinking" className="w-full h-full object-cover scale-110 object-top" />
       </div>
       <div className="bg-gray-100 dark:bg-gray-800 rounded-2xl rounded-bl-sm px-5 py-4 shadow-sm flex items-center gap-1.5">
         <span className="w-2 h-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }} />
@@ -147,6 +149,8 @@ export function ChatInterface({
   sendMessage,
   isLoading,
   userEmail,
+  userName,
+  userAvatar
 }: ChatInterfaceProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [feedbackState, setFeedbackState] = useState<Record<string, 'up' | 'down'>>({});
@@ -168,7 +172,18 @@ export function ChatInterface({
       <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-white dark:bg-gray-900 min-h-0">
         <div className="w-[90%] md:w-[75%] mx-auto space-y-5">
           {messages.length === 0 ? (
-            <WelcomeScreen userEmail={userEmail} />
+            <AssistantBubble
+              message={{
+                id: 'welcome',
+                role: 'assistant',
+                content: userName
+                  ? `Hey ${userName} 👋\n\nI'm your **Ask Canvas** AI agent. Ask me anything about your courses, grades, assignments, or upcoming deadlines.`
+                  : `Welcome back 👋\n\nI'm your **Ask Canvas** AI agent. Ask me anything about your courses, grades, assignments, or upcoming deadlines.`
+              }}
+              isLast={false}
+              onFeedback={() => {}}
+              feedbackState={{}}
+            />
           ) : (
             messages.map((message, index) => {
               const isLast = index === messages.length - 1;
@@ -187,10 +202,15 @@ export function ChatInterface({
                 );
               }
               return (
-                <div key={message.id} className="flex justify-end animate-in fade-in slide-in-from-right-3 duration-300">
+                <div key={message.id} className="flex justify-end gap-3 animate-in fade-in slide-in-from-right-3 duration-300">
                   <div className="max-w-[80%] md:max-w-[72%] bg-blue-600 text-white rounded-2xl rounded-br-sm px-5 py-3.5 shadow-md">
                     <p className="whitespace-pre-wrap leading-relaxed text-sm">{message.content}</p>
                   </div>
+                  {userAvatar && (
+                    <div className="shrink-0 w-9 h-9 rounded-full overflow-hidden shadow-sm mt-1 bg-white">
+                      <img src={userAvatar} alt="You" className="w-full h-full object-cover" />
+                    </div>
+                  )}
                 </div>
               );
             })

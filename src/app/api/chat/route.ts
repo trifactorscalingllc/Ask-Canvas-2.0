@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { createClient } from '@/lib/supabase/server'
 import { decrypt } from '@/lib/crypto'
-import { get_active_courses, get_current_grades, get_upcoming_assignments, get_all_upcoming_assignments } from '@/lib/canvas-tools'
+import { get_active_courses, get_current_grades, get_upcoming_assignments, get_all_upcoming_assignments, get_user_profile } from '@/lib/canvas-tools'
 
 const openai = new OpenAI({
   baseURL: 'https://api.cerebras.ai/v1',
@@ -124,7 +124,7 @@ export async function POST(req: Request) {
 
     const { data: userData, error: userError } = await supabase
       .from('users')
-      .select('encrypted_canvas_key, iv, canvas_cache')
+      .select('encrypted_canvas_key, iv, canvas_cache, name, avatar_url')
       .eq('id', user.id)
       .single()
 
@@ -144,14 +144,28 @@ export async function POST(req: Request) {
        return NextResponse.json({ error: 'Decryption failed' }, { status: 500 })
     }
 
-    // Lazy Hydration of Cold Data
-    if (!userData.canvas_cache) {
+    // Lazy Hydration of Cold Data & Profile
+    if (!userData.canvas_cache || !userData.name) {
       try {
-        const courses = await get_active_courses(canvasKey)
-        await supabase.from('users').update({ canvas_cache: courses }).eq('id', user.id)
-        userData.canvas_cache = courses
+        const updates: any = {}
+        if (!userData.canvas_cache) {
+          const courses = await get_active_courses(canvasKey)
+          updates.canvas_cache = courses
+          userData.canvas_cache = courses
+        }
+        if (!userData.name) {
+          const profile = await get_user_profile(canvasKey)
+          updates.name = profile.short_name || profile.name
+          updates.avatar_url = profile.avatar_url
+          userData.name = updates.name
+          userData.avatar_url = updates.avatar_url
+        }
+
+        if (Object.keys(updates).length > 0) {
+          await supabase.from('users').update(updates).eq('id', user.id)
+        }
       } catch (e) {
-        console.error('Failed to lazy-hydrate canvas cache', e)
+        console.error('Failed to lazy-hydrate canvas metadata', e)
       }
     }
 
@@ -195,6 +209,7 @@ TOOL ROUTING RULES (follow exactly):
 - Format responses as clean markdown. Today: ${new Date().toDateString()}.
 
 [KNOWN USER CONTEXT]
+First Name: ${userData.name ? userData.name.split(' ')[0] : "Student"}
 Active Courses (Canvas ID Mapping): ${userData.canvas_cache ? JSON.stringify(userData.canvas_cache) : "Unknown (call get_active_courses)"}
 User Preferences/Memories: ${memories?.length ? memories.map(m => m.memory_text).join('; ') : "None"}`
 

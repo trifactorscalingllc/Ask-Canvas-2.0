@@ -16,6 +16,8 @@ export default function ChatPage() {
   const [pendingToolCall, setPendingToolCall] = useState<any>(null)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [userEmail, setUserEmail] = useState<string | undefined>(undefined)
+  const [userName, setUserName] = useState<string | undefined>(undefined)
+  const [userAvatar, setUserAvatar] = useState<string | undefined>(undefined)
   
   const supabase = createClient()
   const router = useRouter()
@@ -24,12 +26,25 @@ export default function ChatPage() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) return
     setUserEmail(session.user.email ?? undefined)
-    const { data } = await supabase
-      .from('chats')
-      .select('id, messages, updated_at')
-      .eq('user_id', session.user.id)
-      .order('updated_at', { ascending: false })
-    if (data) setChats(data)
+    
+    const [chatRes, userRes] = await Promise.all([
+      supabase
+        .from('chats')
+        .select('id, messages, updated_at')
+        .eq('user_id', session.user.id)
+        .order('updated_at', { ascending: false }),
+      supabase
+        .from('users')
+        .select('name, avatar_url')
+        .eq('id', session.user.id)
+        .single()
+    ])
+    
+    if (chatRes.data) setChats(chatRes.data)
+    if (userRes.data) {
+      if (userRes.data.name) setUserName(userRes.data.name.split(' ')[0])
+      if (userRes.data.avatar_url) setUserAvatar(userRes.data.avatar_url)
+    }
   }
 
   useEffect(() => {
@@ -215,6 +230,8 @@ export default function ChatPage() {
           sendMessage={sendMessage}
           isLoading={isLoading}
           userEmail={userEmail}
+          userName={userName}
+          userAvatar={userAvatar}
         />
       </div>
       

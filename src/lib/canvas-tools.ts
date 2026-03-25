@@ -95,3 +95,15 @@ export async function get_all_upcoming_assignments(token: string) {
 
   return all.slice(0, 30);
 }
+
+export async function get_user_profile(canvasKey: string) {
+  const url = `https://psu.instructure.com/api/v1/users/self`;
+  const res = await fetch(url, {
+    headers: { 'Authorization': `Bearer ${canvasKey}` }
+  });
+  if (!res.ok) {
+    if (res.status === 401) throw new Error('401_UNAUTHORIZED');
+    throw new Error(`${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}

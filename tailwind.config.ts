@@ -1,3 +1,6 @@
 export default {
-  content: ["./src/**/*.{js,ts,jsx,tsx,mdx}"]
+  content: ["./src/**/*.{js,ts,jsx,tsx,mdx}"],
+  plugins: [
+    require('@tailwindcss/typography'),
+  ],
 }
