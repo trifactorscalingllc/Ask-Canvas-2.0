@@ -55,6 +55,7 @@ export async function get_upcoming_assignments(token: string, course_id: string)
     name: a.name,
     due_at: a.due_at,
     points_possible: a.points_possible,
+    html_url: a.html_url,
   }));
 
   return mapped.slice(0, 10);
@@ -80,6 +81,7 @@ export async function get_all_upcoming_assignments(token: string) {
           name: a.name,
           due_at: a.due_at,
           points_possible: a.points_possible,
+          html_url: a.html_url,
         }));
       } catch {
         return [];
