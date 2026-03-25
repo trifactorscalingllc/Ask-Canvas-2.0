@@ -20,16 +20,18 @@ export async function fetchCanvas(endpoint: string, token: string, domain: strin
 }
 
 export async function get_active_courses(token: string) {
-  const data = await fetchCanvas('/api/v1/courses?enrollment_state=active', token);
+  // Use include[]=term to get actual semester dates
+  const data = await fetchCanvas('/api/v1/courses?enrollment_state=active&include[]=term&per_page=100', token);
   if (!Array.isArray(data)) return [];
 
   const mapped = data.map((c: any) => ({
     id: c.id,
     name: c.name,
     course_code: c.course_code,
+    term: c.term, // name, start_at, end_at
   })).filter(c => c.id && c.name);
 
-  return mapped.slice(0, 20);
+  return mapped;
 }
 
 export async function get_current_grades(token: string, course_id: string) {
@@ -142,25 +144,20 @@ export async function get_assignment_details(token: string, course_id: string, a
 
 export async function get_all_grades(token: string) {
   try {
-    // 1. Fetch courses with a broader scope to include potentially completed ones if needed
-    // Using simple 'active' state first, but fetching more to allow for filtering
-    const courses = await fetchCanvas('/api/v1/courses?per_page=100', token);
+    // 1. Fetch courses with Term metadata
+    const courses = await fetchCanvas('/api/v1/courses?per_page=100&include[]=term', token);
     if (!Array.isArray(courses)) return [];
 
-    // 2. Identify all potentially relevant courses
-    // Instead of hard-exclucing Fall, we just lower its priority unless specifically matched
+    // 2. Chronological Sorting using actual Canvas Term Metadata
+    // This allows the AI to "just know" which classes are current (ending in June 2026 vs Finished)
     const sortedCourses = courses
-      .map((c: any) => {
-        const name = c.name?.toLowerCase() || '';
-        let priority = 0;
-        if (name.includes('spring 2026') || name.includes('spr 26')) priority = 10;
-        else if (name.includes('fall 2025') || name.includes('fa 25')) priority = 5;
-        else if (c.enrollment_state === 'active') priority = 7;
-        return { ...c, priority };
+      .filter(c => c.id && c.name && c.term)
+      .sort((a, b) => {
+        const dateA = a.term?.end_at ? new Date(a.term.end_at).getTime() : 0;
+        const dateB = b.term?.end_at ? new Date(b.term.end_at).getTime() : 0;
+        return dateB - dateA; // Most recent/future terms first
       })
-      .filter(c => c.priority > 0)
-      .sort((a, b) => b.priority - a.priority)
-      .slice(0, 15); // Limit to top 15 relevant courses
+      .slice(0, 20); // Process top 20 relevant courses
 
     // 3. Parallel fetch with short timeouts
     const results = await Promise.allSettled(
@@ -180,6 +177,8 @@ export async function get_all_grades(token: string) {
           course_name: c.name,
           course_code: c.course_code,
           course_id: c.id,
+          semester: c.term?.name || 'Unknown',
+          term_end: c.term?.end_at,
           grade: enrollments[0]?.computed_current_grade || 'N/A',
           score: enrollments[0]?.computed_current_score || 'N/A',
         };
