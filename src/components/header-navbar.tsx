@@ -25,8 +25,8 @@ export async function HeaderNavbar() {
             </Link>
             <nav className="hidden md:flex items-center gap-8">
               <Link href="/" className="text-blue-700 font-semibold border-b-2 border-blue-600 transition-colors text-sm">Product</Link>
-              <Link href="/#workflow-section" className="text-slate-600 hover:text-slate-900 transition-colors text-sm">How it Works</Link>
-              <Link href="/security" className="text-slate-600 hover:text-slate-900 transition-colors text-sm">Security</Link>
+              <Link href="/#how-it-works" className="text-slate-600 hover:text-slate-900 transition-colors text-sm">How it Works</Link>
+              <Link href="/#security" className="text-slate-600 hover:text-slate-900 transition-colors text-sm">Security</Link>
             </nav>
           </div>
           <div className="flex items-center gap-4">

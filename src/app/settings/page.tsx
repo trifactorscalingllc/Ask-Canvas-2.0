@@ -5,24 +5,36 @@ import { updateToken, deleteAccount } from './actions'
 import { createClient } from '@/lib/supabase/client'
 import { TokenHelpModal } from '@/components/token-help-modal'
 import { useRouter } from 'next/navigation'
-import { X } from 'lucide-react'
+import { X, Sun, Moon } from 'lucide-react'
 
 export default function SettingsPage() {
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(true)
   const [submitLoading, setSubmitLoading] = useState(false)
   const [message, setMessage] = useState({ text: '', type: '' })
+  const [isDark, setIsDark] = useState(false)
   const supabase = createClient()
   const router = useRouter()
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
-      if (data.user) {
-        setEmail(data.user.email || '')
-      }
+      if (data.user) setEmail(data.user.email || '')
       setLoading(false)
     })
+    // Restore theme from localStorage on mount
+    const saved = localStorage.getItem('theme')
+    if (saved === 'dark') {
+      setIsDark(true)
+      document.documentElement.classList.add('dark')
+    }
   }, [supabase.auth])
+
+  const toggleTheme = () => {
+    const next = !isDark
+    setIsDark(next)
+    document.documentElement.classList.toggle('dark', next)
+    localStorage.setItem('theme', next ? 'dark' : 'light')
+  }
 
   async function handleUpdateToken(formData: FormData) {
     setSubmitLoading(true)
@@ -65,6 +77,27 @@ export default function SettingsPage() {
               {loading ? <span className="animate-pulse bg-gray-200 h-4 w-32 rounded inline-block"></span> : email}
             </div>
             <p className="mt-2 text-xs text-gray-400">Your email is tied to your authentication identity.</p>
+          </div>
+        </div>
+
+        {/* ── Theme Toggle ─────────────────────────────────────── */}
+        <div className="bg-white shadow-sm border border-gray-200 rounded-2xl overflow-hidden">
+          <div className="px-6 py-5 border-b border-gray-100 bg-gray-50/50">
+            <h3 className="text-lg font-semibold leading-6 text-gray-900">Appearance</h3>
+          </div>
+          <div className="px-6 py-6 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-gray-700">{isDark ? 'Dark Mode' : 'Light Mode'}</p>
+              <p className="text-xs text-gray-400 mt-1">Toggle between light and dark themes. Saved automatically.</p>
+            </div>
+            <button
+              onClick={toggleTheme}
+              className={`relative w-14 h-7 rounded-full transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500/50 ${isDark ? 'bg-blue-600' : 'bg-gray-200'}`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow flex items-center justify-center transition-transform duration-300 ${isDark ? 'translate-x-7' : 'translate-x-0'}`}>
+                {isDark ? <Moon className="w-3.5 h-3.5 text-blue-600" /> : <Sun className="w-3.5 h-3.5 text-amber-500" />}
+              </span>
+            </button>
           </div>
         </div>
 

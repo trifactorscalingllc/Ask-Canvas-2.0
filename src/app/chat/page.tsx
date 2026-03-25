@@ -15,6 +15,7 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [pendingToolCall, setPendingToolCall] = useState<any>(null)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [userEmail, setUserEmail] = useState<string | undefined>(undefined)
   
   const supabase = createClient()
   const router = useRouter()
@@ -22,6 +23,7 @@ export default function ChatPage() {
   const fetchChats = async () => {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) return
+    setUserEmail(session.user.email ?? undefined)
     const { data } = await supabase
       .from('chats')
       .select('id, messages, updated_at')
@@ -208,6 +210,7 @@ export default function ChatPage() {
           setInput={setInput}
           sendMessage={sendMessage}
           isLoading={isLoading}
+          userEmail={userEmail}
         />
       </div>
       

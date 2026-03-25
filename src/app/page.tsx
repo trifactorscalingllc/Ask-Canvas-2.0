@@ -242,7 +242,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── Workflow ─────────────────────────────────────────────────────── */}
-      <section ref={workflowRef} className="py-32 bg-white relative overflow-hidden">
+      <section ref={workflowRef} id="how-it-works" className="py-32 bg-white relative overflow-hidden">
         <div className="max-w-7xl mx-auto px-6 relative z-10">
           <div className="text-center mb-24">
             <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-6">Streamline Your Academic Workflow</h2>
@@ -276,7 +276,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── Security ─────────────────────────────────────────────────────── */}
-      <section className="py-24 bg-[#0f172a] text-white overflow-hidden">
+      <section id="security" className="py-24 bg-[#0f172a] text-white overflow-hidden">
         <div className="max-w-7xl mx-auto px-6">
           <div className="bg-[#1e293b]/50 rounded-2xl p-12 lg:p-20 relative overflow-hidden border border-white/5 shadow-2xl">
             <div className="absolute top-0 right-0 -mr-20 -mt-20 w-96 h-96 bg-[#2563eb] opacity-10 blur-[100px] rounded-full" />
