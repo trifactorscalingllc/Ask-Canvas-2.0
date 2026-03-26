@@ -113,39 +113,34 @@ export async function get_upcoming_assignments(token: string, course_id: string)
 export async function fetch_canvas_graphql_context(token: string) {
   const now = new Date();
   const threeWeeksOut = new Date(now.getTime() + 21 * 24 * 60 * 60 * 1000);
-  const map = new Map(); // CourseID -> Full context
+  const map = new Map();
 
   const query = `
-    query OmnibusSync {
-      courseEnrollments {
+    query GetStudentContext {
+      allCourses {
+        _id
+        name
         state
-        course {
-          id
+        term {
           name
-          courseCode
-          state
-          term { name endAt }
-          courseEnrollments {
-            computedCurrentScore
-            computedCurrentGrade
-          }
-          assignmentsConnection {
-            nodes {
-              id
-              name
-              dueAt
-              pointsPossible
-              htmlUrl
-              gradedAt
-              workflowState
+        }
+        enrollmentsConnection {
+          nodes {
+            type
+            state
+            grades {
+              currentScore
+              currentGrade
             }
           }
-          announcementsConnection(first: 3) {
-            nodes {
-              title
-              postedAt
-              message
-            }
+        }
+        assignmentsConnection {
+          nodes {
+            _id
+            name
+            dueAt
+            pointsPossible
+            htmlUrl
           }
         }
       }
@@ -153,62 +148,49 @@ export async function fetch_canvas_graphql_context(token: string) {
   `;
 
   try {
-    const result = await fetchCanvasGraphQL(query, token);
-    const enrollments = result?.data?.courseEnrollments;
+    const data = await fetchCanvasGraphQL(query, token);
 
-    if (result?.errors) {
-      console.error("[GRAPHQL VALIDATION ERRORS]", JSON.stringify(result.errors, null, 2));
-    }
+    // Aggressive Diagnostic Logging
+    console.log("[OMNIBUS RAW DATA] First course seen:", JSON.stringify(data.data?.allCourses?.[0] || "No courses returned").substring(0, 500));
 
-    if (Array.isArray(enrollments)) {
-      // TS Soft-Filtering: Keep available or recently completed courses
-      const validStates = ['available', 'completed', 'active'];
-      const filteredEnrollments = enrollments.filter((e: any) => {
-        const c = e.course;
-        if (!c || !c.id) return false;
+    const allCourses = data?.data?.allCourses;
 
-        const courseState = (c.state || '').toLowerCase();
-        const enrollState = (e.state || '').toLowerCase();
+    if (Array.isArray(allCourses)) {
+      // The "Soft Filter": Only keep available or active courses
+      const validCourses = allCourses.filter((c: any) =>
+        c?.state === 'available' || c?.state === 'active'
+      );
 
-        return validStates.includes(courseState) || validStates.includes(enrollState);
-      });
+      console.log(`[OMNIBUS REDUCER] Found ${validCourses.length} valid courses after TS soft-filtering (Total raw: ${allCourses.length})`);
 
-      console.log(`[OMNIBUS REDUCER] Found ${filteredEnrollments.length} valid courses after TS soft-filtering (Total raw: ${enrollments.length})`);
+      validCourses.forEach((course: any) => {
+        if (!course?._id || map.has(course._id)) return;
 
-      filteredEnrollments.forEach((e: any) => {
-        const c = e.course;
-        if (map.has(c.id)) return;
+        // Safely extract grades
+        const enrollment = course.enrollmentsConnection?.nodes?.[0];
+        const grades = enrollment?.grades || { currentScore: null, currentGrade: null };
 
-        // Data Reduction & Compression
-        const compressedAssignments = (c.assignmentsConnection?.nodes || [])
-          .filter((a: any) => !a.gradedAt && a.workflowState !== 'graded')
-          .map((a: any) => ({
-            name: a.name,
-            due: a.dueAt,
-            points: a.pointsPossible,
-            url: a.htmlUrl
-          }));
-
-        const compressedAnnouncements = (c.announcementsConnection?.nodes || []).map((an: any) => ({
-          title: an.title,
-          date: an.postedAt
+        // Safely extract assignments
+        const assignments = (course.assignmentsConnection?.nodes || []).map((a: any) => ({
+          name: a.name,
+          due: a.dueAt,
+          points: a.pointsPossible,
+          url: a.htmlUrl
         }));
 
-        const grade = (c.courseEnrollments || [])[0] || {};
-
-        map.set(c.id, {
-          courseName: c.name,
-          courseCode: c.courseCode,
-          termEnd: c.term?.endAt,
-          currentGrade: grade.computedCurrentGrade || 'N/A',
-          currentScore: grade.computedCurrentScore || 0,
-          upcomingAssignments: compressedAssignments.filter((a: any) => {
+        map.set(course._id, {
+          courseId: course._id,
+          courseName: course.name,
+          state: course.state,
+          termName: course.term?.name,
+          currentGrade: grades.currentGrade || 'N/A',
+          currentScore: grades.currentScore || 0,
+          upcomingAssignments: assignments.filter((a: any) => {
             if (!a.due) return true;
             const d = new Date(a.due);
             return d > new Date(now.getTime() - 86400000) && d < threeWeeksOut;
           }),
-          hasMoreAssignments: compressedAssignments.some((a: any) => a.due && new Date(a.due) >= threeWeeksOut),
-          recentAnnouncements: compressedAnnouncements
+          hasMoreAssignments: assignments.some((a: any) => a.due && new Date(a.due) >= threeWeeksOut)
         });
       });
     }
@@ -216,7 +198,7 @@ export async function fetch_canvas_graphql_context(token: string) {
     const finalProfile = Array.from(map.values());
     return {
       profile: finalProfile,
-      scan_trace: `[OMNIBUS DEEP SYNC] Synced ${finalProfile.length} active courses with full grade/assignment/announcement context.`,
+      scan_trace: `[OMNIBUS DEEP SYNC] Synced ${finalProfile.length} active courses via Nuclear Override.`,
       timestamp: now.toISOString()
     };
 
