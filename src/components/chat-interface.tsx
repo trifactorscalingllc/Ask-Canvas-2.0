@@ -40,12 +40,14 @@ interface ChatInterfaceProps {
 // (Fake typing animation removed — real streaming replaces it)
 
 // ── AI message bubble ───────────────────────────────────────────────────────
-function AssistantBubble({ message, isLast, isStreaming, onFeedback, feedbackState }: {
+function AssistantBubble({ message, isLast, isStreaming, onFeedback, feedbackState, allMessages, currentIndex }: {
   message: Message;
   isLast: boolean;
   isStreaming?: boolean;
   onFeedback: (id: string, q: string, r: string, helpful: boolean) => void;
   feedbackState: Record<string, 'up' | 'down'>;
+  allMessages: Message[];
+  currentIndex: number;
 }) {
   // Generative UI Interceptor Logic
   const renderGenerativeUI = () => {
@@ -68,11 +70,15 @@ function AssistantBubble({ message, isLast, isStreaming, onFeedback, feedbackSta
   const renderComponent = (name: string, args: any, state: string, idx: number, result?: any) => {
     // 1. Handle Loading State
     if (state === 'call') {
+      const loadingText = name === 'render_academic_dashboard'
+        ? "Drawing interactive charts..."
+        : "Generating Academic Asset...";
+
       return (
         <div key={idx} className="my-6 p-6 bg-blue-50/50 dark:bg-blue-900/10 rounded-3xl border border-dashed border-blue-200 dark:border-blue-800 flex flex-col items-center justify-center gap-4 animate-pulse">
           <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
           <div className="text-center">
-            <p className="text-sm font-bold text-blue-600 dark:text-blue-400">Generating Academic Asset...</p>
+            <p className="text-sm font-bold text-blue-600 dark:text-blue-400">{loadingText}</p>
             <p className="text-[10px] text-gray-400 uppercase tracking-widest mt-1">Retrieving Canvas Intelligence</p>
           </div>
         </div>
@@ -88,7 +94,19 @@ function AssistantBubble({ message, isLast, isStreaming, onFeedback, feedbackSta
         return <AssignmentTimeline key={idx} assignments={args.assignments} />;
       }
       if (name === 'render_academic_dashboard') {
-        return <AcademicDashboard key={idx} data={args} />;
+        // SMART HANDOFF: Find the most recent 'get_full_academic_context' result in history
+        let dashboardData = args;
+        for (let i = currentIndex; i >= 0; i--) {
+          const prevMsg = allMessages[i];
+          const contextInvocation = prevMsg.toolInvocations?.find(
+            (ti: any) => ti.toolName === 'get_full_academic_context' && ti.state === 'result'
+          );
+          if (contextInvocation?.result) {
+            dashboardData = contextInvocation.result;
+            break;
+          }
+        }
+        return <AcademicDashboard key={idx} data={dashboardData} />;
       }
       if (name === 'render_progress_circle') {
         return <ProgressCircle key={idx} data={args.data} title={args.title} />;
@@ -302,6 +320,8 @@ export function ChatInterface({
               isLast={false}
               onFeedback={() => { }}
               feedbackState={{}}
+              allMessages={[]}
+              currentIndex={0}
             />
           ) : (
             messages.map((message, index) => {
@@ -318,6 +338,8 @@ export function ChatInterface({
                     isStreaming={isLast && isLoading}
                     onFeedback={handleFeedback}
                     feedbackState={feedbackState}
+                    allMessages={messages}
+                    currentIndex={index}
                   />
                 );
               }

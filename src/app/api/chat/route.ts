@@ -65,46 +65,10 @@ const tools = [
     type: 'function',
     function: {
       name: 'render_academic_dashboard',
-      description: 'Render a high-fidelity interactive academic dashboard. Use this for overall term status, grade summaries, or when the user asks "How am I doing?". DO NOT use markdown tables for overall status.',
+      description: 'Render a high-fidelity interactive academic dashboard. Use this for overall term status, grade summaries, or when the user asks "How am I doing?". Call this with NO arguments after fetching context.',
       parameters: {
         type: 'object',
-        properties: {
-          courses: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                name: { type: 'string' },
-                score: { type: 'string', description: 'e.g. 92%' }
-              }
-            }
-          },
-          recentAssignments: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                name: { type: 'string' },
-                dueAt: { type: 'string' },
-                pointsPossible: { type: 'number' },
-                courseName: { type: 'string' }
-              }
-            }
-          },
-          upcomingAssignments: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                name: { type: 'string' },
-                dueAt: { type: 'string' },
-                pointsPossible: { type: 'number' },
-                courseName: { type: 'string' }
-              }
-            }
-          }
-        },
-        required: ['courses', 'recentAssignments', 'upcomingAssignments']
+        properties: {}
       },
     },
   },
@@ -265,16 +229,16 @@ export async function POST(req: Request) {
           const systemPrompt = `You are "Ask Canvas Assistant" v2.1. 
 CURRENT DATE: ${currentDate}
 
-[OMNIBUS PROTOCOL: TWO-STEP HANDOFF]
-1. When asked for overall term status or assignments, you MUST follow a strict two-step execution process.
-2. STEP 1: Call 'get_full_academic_context' exactly ONCE.
-3. STEP 2: Use the returned data to call 'render_academic_dashboard' (or another UI tool) exactly ONCE.
-4. GENERATION CUTOFF: After calling a UI tool (Dashboard, Timeline, Grades), you MUST STOP generating text immediately. Do not summarize or repeat data in text.
+[OMNIBUS PROTOCOL: NO-ARG TRIGGER]
+1. When asked for overall term status or assignments, call 'get_full_academic_context' exactly ONCE.
+2. Once you have the data, call 'render_academic_dashboard' with NO arguments to trigger the UI.
+3. DO NOT attempt to pass data into the render tool. The frontend will handle the handoff.
+4. After calling 'render_academic_dashboard', you MUST STOP generating text immediately.
 
 [FORMATTING]
 1. Mermaid graphs: Wrap in \`\`\`mermaid blocks.
-2. Academic Dashboard: For overall status/grades, call \`render_academic_dashboard\`. Yield control immediately after.
-3. NO WALLS OF TEXT: If a tool is called, eliminate all conversational summary.
+2. NO WALLS OF TEXT: If a tool is called, eliminate all conversational summary.
+3. Tables: Use ONLY for simple data deep-dives, never for overall term status.
 
 [AI-IS-TRUTH POLICY]
 1. Academic data MUST come from the tools. No hallucination.`;
