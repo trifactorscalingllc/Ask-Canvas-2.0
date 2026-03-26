@@ -3,6 +3,7 @@ import OpenAI from 'openai'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { decrypt } from '@/lib/crypto'
+import { observeOpenAI } from '@langfuse/openai'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -10,17 +11,22 @@ import { fetch_canvas_graphql_context, get_assignment_details } from '@/lib/canv
 import { getProviderStatus, updateRateLimits, updateModelAvailability } from '@/lib/provider-monitor'
 import { gradeResponse } from '@/lib/auditor'
 
-const openai = new OpenAI({
-  baseURL: 'https://cerebras.helicone.ai/v1',
+const openai = observeOpenAI(new OpenAI({
+  baseURL: 'https://api.cerebras.ai/v1',
   apiKey: process.env.CEREBRAS_API_KEY || 'dummy_key',
-  defaultHeaders: {
-    "Helicone-Auth": `Bearer ${process.env.HELICONE_API_KEY}`
-  }
+}), {
+  secretKey: process.env.LANGFUSE_SECRET_KEY,
+  publicKey: process.env.LANGFUSE_PUBLIC_KEY,
+  baseUrl: process.env.LANGFUSE_HOST
 })
 
 // Client for embeddings (Using proxy/unified key as requested)
-const embeddingClient = new OpenAI({
+const embeddingClient = observeOpenAI(new OpenAI({
   apiKey: process.env.CEREBRAS_API_KEY
+}), {
+  secretKey: process.env.LANGFUSE_SECRET_KEY,
+  publicKey: process.env.LANGFUSE_PUBLIC_KEY,
+  baseUrl: process.env.LANGFUSE_HOST
 })
 
 const startTime = Date.now()
