@@ -117,6 +117,31 @@ const tools = [
   {
     type: 'function',
     function: {
+      name: 'render_progress_circle',
+      description: 'Render a radial Progress Circle chart for visualizing grade distributions or student term progress.',
+      parameters: {
+        type: 'object',
+        properties: {
+          data: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                value: { type: 'number', description: '0-100 percentage' },
+                fill: { type: 'string', description: 'Hex color' }
+              }
+            }
+          },
+          title: { type: 'string' }
+        },
+        required: ['data']
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'save_user_memory',
       description: 'Save a learned fact or preference about the user.',
       parameters: {
@@ -197,11 +222,11 @@ CURRENT DATE: ${currentDate}
 3. If the user asks for more than 3 weeks out, mention that you've only scanned the next 21 days but can search further if requested.
 
 [FORMATTING]
-1. Mermaid graphs: Wrap in \`\`\`mermaid blocks.
+1. Mermaid graphs: Wrap in \`\`\`mermaid blocks. Use Flowcharts or Sequence charts to visualize class relationships or schedules.
 2. Tables: MUST use standardized Markdown Tables. NEVER use bullet points for data.
-3. Grades: Generate a GitHub-flavored Markdown Table for all grades.
-4. Assignments/Schedules: Use a Markdown Table with columns: **Date**, **Course**, **Assignment**, and **Points**. Sort chronologically.
-5. NO WALLS OF TEXT: If data is involved, use structured markdown. No conversational filler like "Here is your data...".
+3. Grades: Use `render_grade_chart` for assignments and `render_progress_circle` for overall course/term standing.
+4. Assignments/Schedules: Use `render_timeline` for vertical flows or Markdown Tables for lists (columns: **Date**, **Course**, **Assignment**, **Points**).
+5. NO WALLS OF TEXT: If data is involved, use a tool visualization or structured markdown.
 
 [AI-IS-TRUTH POLICY]
 1. User memories are for personalization (nicknames, tone) ONLY.
