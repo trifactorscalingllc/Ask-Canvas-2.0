@@ -158,20 +158,20 @@ function AssistantBubble({ message, isLast, isStreaming, onFeedback, feedbackSta
                 )
               },
               table: ({ children }) => (
-                <div className="my-6 overflow-x-auto rounded-2xl border border-gray-200 dark:border-gray-700 shadow-xl transition-all hover:shadow-2xl">
-                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900 font-sans">
+                <div className="relative w-full max-h-80 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm my-6 bg-white dark:bg-gray-900 custom-scrollbar transition-all hover:shadow-md">
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 font-sans text-left text-sm text-gray-700 dark:text-gray-200">
                     {children}
                   </table>
                 </div>
               ),
-              thead: ({ children }) => <thead className="bg-gray-50/80 dark:bg-gray-800/80 backdrop-blur-sm">{children}</thead>,
+              thead: ({ children }) => <thead className="sticky top-0 bg-gray-50/95 dark:bg-gray-800/95 backdrop-blur-md z-10 shadow-sm">{children}</thead>,
               th: ({ children }) => (
-                <th className="px-6 py-4 text-left text-[10px] font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em] tabular-nums">
+                <th className="px-5 py-3 text-left text-[11px] font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-[0.15em] tabular-nums border-b border-gray-100 dark:border-gray-700">
                   {children}
                 </th>
               ),
               td: ({ children }) => (
-                <td className="px-6 py-5 text-sm font-medium text-gray-700 dark:text-gray-200 border-t border-gray-50 dark:border-gray-800 tabular-nums leading-relaxed">
+                <td className="px-5 py-3 text-sm font-medium text-gray-600 dark:text-gray-300 border-b border-gray-50 dark:border-gray-800 tabular-nums whitespace-nowrap leading-relaxed">
                   {children}
                 </td>
               ),
