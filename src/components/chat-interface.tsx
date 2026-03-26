@@ -29,6 +29,7 @@ interface ChatInterfaceProps {
   input: string;
   setInput: (value: string) => void;
   sendMessage: (e: React.FormEvent) => void;
+  handleInputChange: (e: React.ChangeEvent<HTMLInputElement> | React.ChangeEvent<HTMLTextAreaElement>) => void;
   isLoading: boolean;
   userEmail?: string;
   userName?: string;
@@ -279,7 +280,8 @@ export function ChatInterface({
   userEmail,
   userName,
   userAvatar,
-  append
+  append,
+  handleInputChange
 }: ChatInterfaceProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [feedbackState, setFeedbackState] = useState<Record<string, 'up' | 'down'>>({});
@@ -347,13 +349,12 @@ export function ChatInterface({
         </div>
       </div>
 
-      {/* Input Area */}
       <div className="p-4 bg-white dark:bg-gray-950 border-t border-gray-100 dark:border-gray-800 shrink-0 shadow-sm relative z-20">
         <form onSubmit={sendMessage} className="flex items-center space-x-3 w-[90%] md:w-[75%] mx-auto">
           <input
             type="text"
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={handleInputChange}
             disabled={isLoading}
             placeholder="Ask about your Canvas data..."
             className="flex-1 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 rounded-full px-5 py-3.5 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 disabled:opacity-50 transition-all text-[15px]"

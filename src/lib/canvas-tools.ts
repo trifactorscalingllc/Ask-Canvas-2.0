@@ -429,6 +429,19 @@ async function legacy_get_all_upcoming_assignments(token: string, courses: any[]
   };
 }
 
+export async function get_canvas_user_profile(token: string) {
+  const query = `
+    query {
+      currentUser {
+        name
+        avatarUrl
+      }
+    }
+  `;
+  const data = await fetchCanvasGraphQL(query, token);
+  return data?.data?.currentUser;
+}
+
 export async function get_user_profile(canvasKey: string) {
   const url = `https://psu.instructure.com/api/v1/users/self`;
   const res = await fetch(url, {

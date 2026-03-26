@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Menu, Plus, MessageSquare } from 'lucide-react'
 import { useChat } from '@ai-sdk/react'
+import { fetchCanvasProfile } from '@/app/actions/canvas'
 
 export default function ChatPage() {
   const [chats, setChats] = useState<any[]>([])
@@ -22,7 +23,7 @@ export default function ChatPage() {
   // UseChat Hook Integration
   const { messages, input, setInput, handleSubmit, handleInputChange, isLoading, setMessages, append } = useChat({
     api: '/api/chat',
-    body: { chatId: currentChatId },
+    body: { chatId: currentChatId, userName: userName || 'Student' },
     initialMessages: [],
     onResponse: (response: Response) => {
       // Handle custom headers if needed
@@ -52,9 +53,20 @@ export default function ChatPage() {
     ])
 
     if (chatRes.data) setChats(chatRes.data)
-    if (userRes.data) {
-      if (userRes.data.name) setUserName(userRes.data.name.split(' ')[0])
-      if (userRes.data.avatar_url) setUserAvatar(userRes.data.avatar_url)
+    
+    // Deep Sync: Fetch real name from Canvas
+    try {
+      const profile = await fetchCanvasProfile()
+      if (profile) {
+        setUserName(profile.name)
+        if (profile.avatarUrl) setUserAvatar(profile.avatarUrl)
+      }
+    } catch (err) {
+      console.warn('Canvas identity sync failed:', err)
+      if (userRes.data) {
+        if (userRes.data.name) setUserName(userRes.data.name.split(' ')[0])
+        if (userRes.data.avatar_url) setUserAvatar(userRes.data.avatar_url)
+      }
     }
   }
 
@@ -133,6 +145,7 @@ export default function ChatPage() {
           userName={userName}
           userAvatar={userAvatar}
           append={append}
+          handleInputChange={handleInputChange}
         />
       </div>
 

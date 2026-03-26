@@ -19,7 +19,8 @@ export async function POST(req: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return new Response('Unauthorized', { status: 401 })
 
-    const { messages } = await req.json()
+    const { messages, userName = 'Student' } = await req.json()
+    const firstName = userName.split(' ')[0]
 
     // 1. Fetch User Encryption Keys
     const { data: userData } = await supabase
@@ -40,6 +41,7 @@ export async function POST(req: Request) {
       model: cerebras('llama-3.3-70b') as any,
       messages,
       system: `You are "Ask Canvas Assistant" v2.6 (Smart View Orchestration). 
+You are talking directly to ${firstName}. Address them by their name occasionally and act as their highly intelligent, personal academic advisor.
 CURRENT DATE: ${currentDate}
 
 [OMNIBUS PROTOCOL: SMART VIEW ORCHESTRATION]
