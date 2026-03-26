@@ -19,25 +19,36 @@ export async function fetchCanvas(endpoint: string, token: string, domain: strin
   return response.json();
 }
 async function fetchCanvasGraphQL(query: string, token: string) {
+  const start = performance.now();
   const baseUrl = process.env.CANVAS_DOMAIN?.startsWith('http')
     ? process.env.CANVAS_DOMAIN
     : `https://${process.env.CANVAS_DOMAIN || 'canvas.instructure.com'}`;
 
-  const response = await fetch(`${baseUrl}/api/graphql`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ query }),
-  });
+  try {
+    const response = await fetch(`${baseUrl}/api/graphql`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query }),
+    });
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Canvas GraphQL Error: ${response.status} - ${err}`);
+    const timing = (performance.now() - start).toFixed(2);
+    console.log(`[GRAPHQL FETCH] Completed in ${timing}ms`);
+
+    if (!response.ok) {
+      const err = await response.text();
+      console.error(`[GRAPHQL ERROR] status=${response.status} timing=${timing}ms: ${err.slice(0, 500)}`);
+      throw new Error(`Canvas GraphQL Error: ${response.status} - ${err}`);
+    }
+
+    return response.json();
+  } catch (err) {
+    const timing = (performance.now() - start).toFixed(2);
+    console.error(`[GRAPHQL FETCH FAILURE] after ${timing}ms:`, err);
+    throw err;
   }
-
-  return response.json();
 }
 
 // This second fetchCanvas function appears to be a duplicate or an older version.
@@ -134,7 +145,7 @@ export async function fetch_canvas_graphql_context(token: string) {
             }
           }
         }
-        assignmentsConnection {
+        assignmentsConnection(first: 15) {
           nodes {
             _id
             name
@@ -225,7 +236,7 @@ export async function get_all_upcoming_assignments(token: string, existingCourse
           name
           courseCode
           term { name endAt }
-          assignmentsConnection {
+          assignmentsConnection(first: 30) {
             nodes { id name dueAt pointsPossible htmlUrl gradedAt workflowState }
           }
         }
@@ -235,7 +246,7 @@ export async function get_all_upcoming_assignments(token: string, existingCourse
             name
             courseCode
             term { name endAt }
-            assignmentsConnection {
+            assignmentsConnection(first: 30) {
               nodes { id name dueAt pointsPossible htmlUrl gradedAt workflowState }
             }
           }

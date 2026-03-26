@@ -309,9 +309,9 @@ CURRENT DATE: ${currentDate}
           while (iterations < 3 && !loopFinished) {
             iterations++
 
-            // SECURITY: If we are close to Vercel's 60s limit (50s), force stop.
+            // SECURITY: If we are close to Vercel's 60s limit (55s), force stop.
             const elapsed = Date.now() - startTime
-            if (elapsed > 45000) {
+            if (elapsed > 55000) {
               const timeoutMsg = iterations === 1 && !combinedText
                 ? "(Note: Request timed out during initial data fetch. Please try a smaller date range.)"
                 : "(Note: Results partial due to processing limits)";
@@ -323,6 +323,7 @@ CURRENT DATE: ${currentDate}
 
             // HEARTBEAT: Explicitly send a character before starting a long LLM turn
             send("\u200B")
+            if (iterations > 1) send("\n\n(Scanning detailed academic context...)")
             history.push({ role: 'assistant', content: `[INTERNAL] Starting AI iteration ${iterations}...` })
 
             const turnStream = await getCompletion([{ role: 'system', content: systemPrompt }, ...currentHistory]);
@@ -397,7 +398,7 @@ CURRENT DATE: ${currentDate}
                     if (error) throw error;
                     return { role: 'tool', tool_call_id: tc.id, name, content: JSON.stringify(chunks || []) };
                   }
-                  if (name === 'render_grade_chart' || name === 'render_timeline') {
+                  if (name === 'render_grade_chart' || name === 'render_timeline' || name === 'render_academic_dashboard' || name === 'render_progress_circle') {
                     return { role: 'tool', tool_call_id: tc.id, name, content: "UI Rendered." }
                   }
                   if (name === 'get_assignment_details') return { role: 'tool', tool_call_id: tc.id, name, content: JSON.stringify(await get_assignment_details(canvasKey, args.course_id, args.assignment_id)) }
