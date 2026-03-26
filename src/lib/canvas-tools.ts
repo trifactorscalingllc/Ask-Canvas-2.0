@@ -110,6 +110,106 @@ export async function get_upcoming_assignments(token: string, course_id: string)
   return mapped.slice(0, 20);
 }
 
+export async function fetch_canvas_graphql_context(token: string) {
+  const now = new Date();
+  const threeWeeksOut = new Date(now.getTime() + 21 * 24 * 60 * 60 * 1000);
+  const map = new Map(); // CourseID -> Full context
+
+  const query = `
+    query OmnibusSync {
+      courseEnrollments {
+        course {
+          id
+          name
+          courseCode
+          term { name endAt }
+          courseEnrollments {
+            computedCurrentScore
+            computedCurrentGrade
+          }
+          assignmentsConnection {
+            nodes {
+              id
+              name
+              dueAt
+              pointsPossible
+              htmlUrl
+              gradedAt
+              workflowState
+            }
+          }
+          announcementsConnection(first: 3) {
+            nodes {
+              title
+              postedAt
+              message
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  try {
+    const result = await fetchCanvasGraphQL(query, token);
+    const enrollments = result?.data?.courseEnrollments;
+
+    if (result?.errors) {
+      console.error("[GRAPHQL VALIDATION ERRORS]", JSON.stringify(result.errors, null, 2));
+    }
+
+    if (Array.isArray(enrollments)) {
+      enrollments.forEach((e: any) => {
+        const c = e.course;
+        if (!c || !c.id || map.has(c.id)) return;
+
+        // Data Reduction & Compression
+        const compressedAssignments = (c.assignmentsConnection?.nodes || [])
+          .filter((a: any) => !a.gradedAt && a.workflowState !== 'graded')
+          .map((a: any) => ({
+            name: a.name,
+            due: a.dueAt,
+            points: a.pointsPossible,
+            url: a.htmlUrl
+          }));
+
+        const compressedAnnouncements = (c.announcementsConnection?.nodes || []).map((an: any) => ({
+          title: an.title,
+          date: an.postedAt
+        }));
+
+        const grade = c.courseEnrollments?.[0] || {};
+
+        map.set(c.id, {
+          courseName: c.name,
+          courseCode: c.courseCode,
+          termEnd: c.term?.endAt,
+          currentGrade: grade.computedCurrentGrade || 'N/A',
+          currentScore: grade.computedCurrentScore || 0,
+          upcomingAssignments: compressedAssignments.filter((a: any) => {
+            if (!a.due) return true;
+            const d = new Date(a.due);
+            return d > new Date(now.getTime() - 86400000) && d < threeWeeksOut;
+          }),
+          hasMoreAssignments: compressedAssignments.some((a: any) => a.due && new Date(a.due) >= threeWeeksOut),
+          recentAnnouncements: compressedAnnouncements
+        });
+      });
+    }
+
+    const finalProfile = Array.from(map.values());
+    return {
+      profile: finalProfile,
+      scan_trace: `[OMNIBUS DEEP SYNC] Synced ${finalProfile.length} active courses with full grade/assignment/announcement context.`,
+      timestamp: now.toISOString()
+    };
+
+  } catch (err) {
+    console.error("[OMNIBUS SYNC FAILURE]", err);
+    throw err;
+  }
+}
+
 export async function get_all_upcoming_assignments(token: string, existingCourses?: any[], courseFilter?: string) {
   const now = new Date();
   const threeWeeksOut = new Date(now.getTime() + 21 * 24 * 60 * 60 * 1000);

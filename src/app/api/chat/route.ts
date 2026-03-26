@@ -6,7 +6,7 @@ import { decrypt } from '@/lib/crypto'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
-import { get_all_grades, get_all_upcoming_assignments, get_assignment_details } from '@/lib/canvas-tools'
+import { fetch_canvas_graphql_context, get_assignment_details } from '@/lib/canvas-tools'
 import { getProviderStatus, updateRateLimits, updateModelAvailability } from '@/lib/provider-monitor'
 import { gradeResponse } from '@/lib/auditor'
 
@@ -55,29 +55,9 @@ const tools = [
   {
     type: 'function',
     function: {
-      name: 'get_all_grades',
-      description: 'Fetch grades for ALL active courses in one single call.',
+      name: 'get_full_academic_context',
+      description: 'Call this tool WHENEVER the user asks for ANY Canvas data, information, lists of assignments, grades, or class schedules. This tool returns the complete academic profile in one call.',
       parameters: { type: 'object', properties: {} },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'get_all_upcoming_assignments',
-      description: 'Fetch ALL upcoming assignments across all classes.',
-      parameters: { type: 'object', properties: {} },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'get_assignment_details',
-      description: 'Get deep details about 1 specific assignment.',
-      parameters: {
-        type: 'object',
-        properties: { course_id: { type: 'string' }, assignment_id: { type: 'string' } },
-        required: ['course_id', 'assignment_id'],
-      },
     },
   },
   {
@@ -113,6 +93,7 @@ export async function POST(req: Request) {
     }
 
     const canvasKey = decrypt(userData.encrypted_canvas_key as string, userData.iv as string)
+    const currentDate = new Date().toISOString();
 
     let history: any[] = []
     if (chatId) {
@@ -148,61 +129,27 @@ export async function POST(req: Request) {
         }
 
         try {
-          const isGrade = /grade|score|how am i doing|classes/.test(lastPrompt.toLowerCase())
-          const isAssign = /assignment|due|upcoming|exam|test|quiz|syllabus/.test(lastPrompt.toLowerCase())
-
-          history.push({ role: 'assistant', content: `[INTERNAL] Starting data pre-fetch for prompt: "${lastPrompt}"` })
-          const [memories, pGrades] = await Promise.all([
+          history.push({ role: 'assistant', content: `[INTERNAL] Starting Omnibus pre-fetch for prompt: "${lastPrompt}"` })
+          const [memories] = await Promise.all([
             supabase.from('user_memories').select('memory_text').eq('user_id', user.id),
-            isGrade ? get_all_grades(canvasKey) : Promise.resolve(null),
-            // REMOVED ASSIGNMENT PRE-FETCH: This forces the AI to use high-fidelity tools for every query, 
-            // preventing stale/truncated cache from polluting the initial context.
           ])
-          history.push({ role: 'assistant', content: `[INTERNAL] Pre-fetch complete. Found ${pGrades ? "grades" : "no grades"}.` })
 
-          const systemPrompt = `You are the "Ask Canvas" Assistant. v2.0-robust.
-[CRITICAL: FRESH DATA POLICY]
-1. ALWAYS use your TOOLS to get live data if the user asks for current grades, assignments, or schedules. NEVER respond based on pre-fetched data alone.
-2. If you see assignments like "Bobby the Entrepreneur" in conversation history, still CALL 'get_all_upcoming_assignments' to verify if you are providing a summary.
+          const systemPrompt = `You are "Ask Canvas Assistant" v2.1. 
+CURRENT DATE: ${currentDate}
 
-[API-IS-TRUTH POLICY]
-1. Canvas API Tools are the ONLY source of truth for grades, assignments, and schedules.
-2. 'user_memories' are ONLY for personalization (e.g., student preferences, nickname, desired tone). 
-3. NEVER assume an assignment is completed or a grade is final based on 'user_memories' or conversation history if the API tools show otherwise. API overrides everything.
+[OMNIBUS PROTOCOL]
+1. ALWAYS use the 'get_full_academic_context' tool for ANY question about grades, assignments, courses, or schedules.
+2. The context returned by the tool is the ONLY source of truth. Trust it over your own memories.
+3. If the user asks for more than 3 weeks out, mention that you've only scanned the next 21 days but can search further if requested.
 
-[3-WEEK HIERARCHY]
-1. Your tools default to a 21-day (3-week) window for speed and stability.
-2. If 'get_all_upcoming_assignments' returns 'hasMore: true', you MUST inform the user: "I've summarized the next 3 weeks, but there are more assignments further out. Would you like me to load the rest?"
+[FORMATTING]
+1. Mermaid graphs: Wrap in \`\`\`mermaid blocks.
+2. Tables: MUST use standardized Markdown. Bold **Course** and **Assignment** names.
+3. Dates: "Month Day, Year, HH:MM AM/PM (Timezone)".
 
-[CONTEXT]
-Name: ${userData.name || "Student"}
-Current Date: ${new Date().toISOString()} (Use this to compare against 'term_end' dates from tools)
-Courses: ${JSON.stringify((userData.canvas_cache as any[])?.map((c: any) => ({ id: c.id, name: c.name })) || [])}
-Pre-fetched (STALE/CONTEXT ONLY):
-- Grades: ${JSON.stringify(pGrades || "None")}
-Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
-
-[STRICT FORMATTING]
-1. Mermaid graphs: Wrap in \`\`\`mermaid blocks on new lines.
-2. Tables: MUST use standard Markdown with pipes (|) and a divider row.
-   EXAMPLE:
-   | Course | Assignment | Due Date |
-   |:-------|:-----------|:---------|
-   | **ECON 102** | **Bobby the Entrepreneur Assignment** | March 26, 2026, 11:00 AM (EST) |
-3. Spacing: Use double newlines between paragraphs and visuals.
-4. Bold: Use **bold** for EVERY Course and Assignment name inside table cells.
-5. Dates: Use "Month Day, Year, HH:MM AM/PM (Timezone)" format (e.g., "March 26, 2026, 11:00 AM (EST)").
-
-[CANVAS ACADEMIC CONTEXT]
-1. AUTONOMOUS SEMESTER TRACKING: Use the 'term_end' and 'semester' fields returned by 'get_all_grades' or 'get_all_upcoming_assignments' to categorize courses. 
-2. If today's date (${new Date().toISOString()}) is BEFORE a course's 'term_end', consider it a Current/Active course. 
-3. If today's date is AFTER 'term_end', consider it a "Historical/Finished" course.
-4. PRIORITIZE Current/Active courses unless the user specifically asks for historical data (e.g., "Fall grades").
-
-[CONTEXT & RESPONSE POLICY]
-1. **Strict Prompt Adherence**: Only respond to the latest user message. Do not repeat previous information (like assignment lists) unless specifically asked for or needed to answer the new question.
-2. **Reference Resolution**: If the user uses pronouns or vague terms (e.g., "that assignment," "it," "the class"), use the conversation history to identify the specific object being discussed.
-3. **Minimalism**: If the user asks for "classes," do not volunteer "assignments" unless they are integrated into a course overview. NEVER re-display a table or list that was already shown in the history unless the user explicitly asks for it again or it needs updating.`;
+[AI-IS-TRUTH POLICY]
+1. User memories are for personalization (nicknames, tone) ONLY.
+2. Academic data MUST come from the tools. No hallucination.`;
 
           let currentHistory = [...history.slice(-10)]
           let anyToolsCalledAcrossIterations = false
@@ -279,9 +226,8 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
                 const name = tc.function.name
                 const args = JSON.parse(tc.function.arguments || '{}')
                 try {
-                  if (name === 'get_all_grades') return { role: 'tool', tool_call_id: tc.id, name, content: JSON.stringify(await get_all_grades(canvasKey)) }
-                  if (name === 'get_all_upcoming_assignments') {
-                    const res = await get_all_upcoming_assignments(canvasKey);
+                  if (name === 'get_full_academic_context') {
+                    const res = await fetch_canvas_graphql_context(canvasKey);
                     if (res.scan_trace) {
                       history.push({ role: 'assistant', content: `[INTERNAL] ${res.scan_trace}` });
                     }
