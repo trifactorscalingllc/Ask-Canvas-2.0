@@ -10,7 +10,7 @@ import { submitFeedback } from '@/app/actions/feedback';
 import { MermaidVisual, FileEmbed } from './chat-visuals';
 import { MermaidDiagram } from './generative-ui/MermaidDiagram';
 import { SmartView } from './generative-ui/SmartView';
-import { LandingDashboard } from './LandingDashboard';
+import LandingDashboard from './LandingDashboard';
 
 export interface Message {
   id: string;

@@ -8,7 +8,7 @@ interface LandingDashboardProps {
   userName?: string;
 }
 
-export function LandingDashboard({ onQuickPrompt, userName }: LandingDashboardProps) {
+export default function LandingDashboard({ onQuickPrompt, userName }: LandingDashboardProps) {
   const firstName = userName ? userName.split(' ')[0] : 'there';
   
   const cards = [
