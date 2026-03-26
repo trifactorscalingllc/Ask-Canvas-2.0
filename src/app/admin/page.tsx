@@ -13,15 +13,48 @@ export default async function AdminDashboard() {
     redirect('/')
   }
 
-  const { data: proposedTools } = await (supabase as any)
-    .from('proposed_tools')
-    .select('id, requested_feature, status, created_at, user_id')
-    .order('created_at', { ascending: false })
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token
 
-  const { data: feedback } = await (supabase as any)
-    .from('feedback')
-    .select('id, query, response, is_helpful, created_at')
-    .order('created_at', { ascending: false })
+  const gqlResponse = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/graphql/v1`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({
+      query: `
+        query AdminData {
+          proposed_toolsCollection(orderBy: [{created_at: DescNullsLast}]) {
+            edges {
+              node {
+                id
+                requested_feature
+                status
+                created_at
+                user_id
+              }
+            }
+          }
+          feedbackCollection(orderBy: [{created_at: DescNullsLast}]) {
+            edges {
+              node {
+                id
+                query
+                response
+                is_helpful
+                created_at
+              }
+            }
+          }
+        }
+      `
+    })
+  }).then(res => res.json())
+
+  const proposedTools = gqlResponse.data?.proposed_toolsCollection?.edges?.map((e: any) => e.node) || []
+  const feedback = gqlResponse.data?.feedbackCollection?.edges?.map((e: any) => e.node) || []
 
   const totalTools = proposedTools?.length || 0
   const totalFeedback = feedback?.length || 0
@@ -65,7 +98,7 @@ export default async function AdminDashboard() {
                     <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-1 rounded truncate max-w-[150px]" title={tool.user_id}>{tool.user_id}</span>
                     <form action={markAsResolved}>
                       <input type="hidden" name="id" value={tool.id} />
-                      <button 
+                      <button
                         type="submit"
                         disabled={tool.status === 'resolved'}
                         className={`text-xs font-semibold px-3 py-1.5 rounded-full transition-colors ${tool.status === 'resolved' ? 'bg-green-100 text-green-700 cursor-not-allowed' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-sm'}`}
