@@ -198,8 +198,10 @@ CURRENT DATE: ${currentDate}
 
 [FORMATTING]
 1. Mermaid graphs: Wrap in \`\`\`mermaid blocks.
-2. Tables: MUST use standardized Markdown. Bold **Course** and **Assignment** names.
-3. Dates: "Month Day, Year, HH:MM AM/PM (Timezone)".
+2. Tables: MUST use standardized Markdown Tables. NEVER use bullet points for data.
+3. Grades: Generate a GitHub-flavored Markdown Table for all grades.
+4. Assignments/Schedules: Use a Markdown Table with columns: **Date**, **Course**, **Assignment**, and **Points**. Sort chronologically.
+5. NO WALLS OF TEXT: If data is involved, use structured markdown. No conversational filler like "Here is your data...".
 
 [AI-IS-TRUTH POLICY]
 1. User memories are for personalization (nicknames, tone) ONLY.
