@@ -47,7 +47,7 @@ async function logError(opts: { userId?: string, userPrompt?: string, agentRespo
     console.error(`[DIAGNOSTIC LOG]: ${msg}`)
     const service = getSupabaseService()
     if (!service) return
-    await service.from('error_logs').insert({
+    await (service.from('error_logs') as any).insert({
       user_id: opts.userId ?? null,
       user_prompt: opts.userPrompt ?? null,
       agent_response: opts.agentResponse ?? null,
