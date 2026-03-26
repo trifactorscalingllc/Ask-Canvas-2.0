@@ -224,8 +224,8 @@ CURRENT DATE: ${currentDate}
 [FORMATTING]
 1. Mermaid graphs: Wrap in \`\`\`mermaid blocks. Use Flowcharts or Sequence charts to visualize class relationships or schedules.
 2. Tables: MUST use standardized Markdown Tables. NEVER use bullet points for data.
-3. Grades: Use `render_grade_chart` for assignments and `render_progress_circle` for overall course/term standing.
-4. Assignments/Schedules: Use `render_timeline` for vertical flows or Markdown Tables for lists (columns: **Date**, **Course**, **Assignment**, **Points**).
+3. Grades: Use \`render_grade_chart\` for assignments and \`render_progress_circle\` for overall course/term standing.
+4. Assignments/Schedules: Use \`render_timeline\` for vertical flows or Markdown Tables for lists (columns: **Date**, **Course**, **Assignment**, **Points**).
 5. NO WALLS OF TEXT: If data is involved, use a tool visualization or structured markdown.
 
 [AI-IS-TRUTH POLICY]

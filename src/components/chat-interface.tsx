@@ -9,6 +9,7 @@ import { submitFeedback } from '@/app/actions/feedback';
 import { MermaidVisual, FileEmbed } from './chat-visuals';
 import { GradeChart } from './generative-ui/GradeChart';
 import { AssignmentTimeline } from './generative-ui/AssignmentTimeline';
+import { ProgressCircle } from './generative-ui/ProgressCircle';
 import { MermaidDiagram } from './generative-ui/MermaidDiagram';
 
 export interface Message {
@@ -57,6 +58,9 @@ function AssistantBubble({ message, isLast, isStreaming, onFeedback, feedbackSta
       }
       if (name === 'render_timeline') {
         return <AssignmentTimeline key={idx} assignments={args.assignments} />;
+      }
+      if (name === 'render_progress_circle') {
+        return <ProgressCircle key={idx} data={args.data} title={args.title} />;
       }
       return null;
     });
