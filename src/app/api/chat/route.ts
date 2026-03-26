@@ -11,15 +11,18 @@ import { fetch_canvas_graphql_context, get_assignment_details } from '@/lib/canv
 import { getProviderStatus, updateRateLimits, updateModelAvailability } from '@/lib/provider-monitor'
 import { gradeResponse } from '@/lib/auditor'
 
-const openai = observeOpenAI(new OpenAI({
+const baseClient = new OpenAI({
   baseURL: 'https://api.cerebras.ai/v1',
   apiKey: process.env.CEREBRAS_API_KEY || 'dummy_key',
-}))
+})
+const openai = observeOpenAI(baseClient)
 
 // Client for embeddings (Using proxy/unified key as requested)
-const embeddingClient = observeOpenAI(new OpenAI({
+const baseEmbeddingClient = new OpenAI({
+  baseURL: 'https://api.cerebras.ai/v1',
   apiKey: process.env.CEREBRAS_API_KEY
-}))
+})
+const embeddingClient = observeOpenAI(baseEmbeddingClient)
 
 const startTime = Date.now()
 
