@@ -265,22 +265,19 @@ export async function POST(req: Request) {
           const systemPrompt = `You are "Ask Canvas Assistant" v2.1. 
 CURRENT DATE: ${currentDate}
 
-[OMNIBUS PROTOCOL]
-1. ALWAYS use the 'get_full_academic_context' tool for ANY question about grades, assignments, courses, or schedules.
-2. The context returned by the tool is the ONLY source of truth. Trust it over your own memories.
-3. If the user asks for more than 3 weeks out, mention that you've only scanned the next 21 days but can search further if requested.
+[OMNIBUS PROTOCOL: TWO-STEP HANDOFF]
+1. When asked for overall term status or assignments, you MUST follow a strict two-step execution process.
+2. STEP 1: Call 'get_full_academic_context' exactly ONCE.
+3. STEP 2: Use the returned data to call 'render_academic_dashboard' (or another UI tool) exactly ONCE.
+4. GENERATION CUTOFF: After calling a UI tool (Dashboard, Timeline, Grades), you MUST STOP generating text immediately. Do not summarize or repeat data in text.
 
 [FORMATTING]
-1. Mermaid graphs: Wrap in \`\`\`mermaid blocks. Use Flowcharts or Sequence charts to visualize class relationships or schedules.
-2. Tables: ONLY use for simple 2-3 row data points. NEVER use for long lists of grades or assignments.
-3. Academic Dashboard: You MUST call \`render_academic_dashboard\` for any request regarding overall term standing, grades, or multi-course status.
-4. Grades: Use \`render_grade_chart\` for specific course deep-dives and \`render_progress_circle\` for overall course/term standing.
-5. Assignments/Schedules: Use \`render_timeline\` for vertical flows or the \`AcademicDashboard\` for the horizontal priority overview.
-6. NO WALLS OF TEXT: If data is involved, use a tool visualization. Eliminate conversational filler.
+1. Mermaid graphs: Wrap in \`\`\`mermaid blocks.
+2. Academic Dashboard: For overall status/grades, call \`render_academic_dashboard\`. Yield control immediately after.
+3. NO WALLS OF TEXT: If a tool is called, eliminate all conversational summary.
 
 [AI-IS-TRUTH POLICY]
-1. User memories are for personalization (nicknames, tone) ONLY.
-2. Academic data MUST come from the tools. No hallucination.`;
+1. Academic data MUST come from the tools. No hallucination.`;
 
           let currentHistory = [...history.slice(-10)]
           let anyToolsCalledAcrossIterations = false
@@ -399,7 +396,9 @@ CURRENT DATE: ${currentDate}
                     return { role: 'tool', tool_call_id: tc.id, name, content: JSON.stringify(chunks || []) };
                   }
                   if (name === 'render_grade_chart' || name === 'render_timeline' || name === 'render_academic_dashboard' || name === 'render_progress_circle') {
-                    return { role: 'tool', tool_call_id: tc.id, name, content: "UI Rendered." }
+                    // HANDOFF PROTOCOL: If a UI tool is called, we STOP the generation loop.
+                    loopFinished = true
+                    return { role: 'tool', tool_call_id: tc.id, name, content: "UI Rendered. Turn complete." }
                   }
                   if (name === 'get_assignment_details') return { role: 'tool', tool_call_id: tc.id, name, content: JSON.stringify(await get_assignment_details(canvasKey, args.course_id, args.assignment_id)) }
                   if (name === 'save_user_memory') {
