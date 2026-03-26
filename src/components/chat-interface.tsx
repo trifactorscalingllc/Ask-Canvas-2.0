@@ -9,6 +9,7 @@ import { submitFeedback } from '@/app/actions/feedback';
 import { MermaidVisual, FileEmbed } from './chat-visuals';
 import { MermaidDiagram } from './generative-ui/MermaidDiagram';
 import { SmartView } from './generative-ui/SmartView';
+import { LandingDashboard } from './LandingDashboard';
 
 export interface Message {
   id: string;
@@ -32,6 +33,7 @@ interface ChatInterfaceProps {
   userEmail?: string;
   userName?: string;
   userAvatar?: string;
+  append: (message: any) => Promise<string | null | undefined>;
 }
 
 // (Fake typing animation removed — real streaming replaces it)
@@ -67,7 +69,7 @@ function AssistantBubble({ message, isLast, isStreaming, onFeedback, feedbackSta
   const renderComponent = (name: string, args: any, state: string, idx: number, result?: any) => {
     // 1. Handle Loading State
     if (state === 'call') {
-      const loadingText = name === 'render_academic_dashboard'
+      const loadingText = name === 'render_smart_view'
         ? "Drawing interactive charts..."
         : "Generating Academic Asset...";
 
@@ -276,7 +278,8 @@ export function ChatInterface({
   isLoading,
   userEmail,
   userName,
-  userAvatar
+  userAvatar,
+  append
 }: ChatInterfaceProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [feedbackState, setFeedbackState] = useState<Record<string, 'up' | 'down'>>({});
@@ -298,19 +301,9 @@ export function ChatInterface({
       <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-white dark:bg-gray-900 min-h-0">
         <div className="w-[90%] md:w-[75%] mx-auto space-y-5">
           {messages.length === 0 ? (
-            <AssistantBubble
-              message={{
-                id: 'welcome',
-                role: 'assistant',
-                content: userName
-                  ? `Hey ${userName} 👋\n\nI'm your **Ask Canvas** AI agent. Ask me anything about your courses, grades, assignments, or upcoming deadlines.`
-                  : `Welcome back 👋\n\nI'm your **Ask Canvas** AI agent. Ask me anything about your courses, grades, assignments, or upcoming deadlines.`
-              }}
-              isLast={false}
-              onFeedback={() => { }}
-              feedbackState={{}}
-              allMessages={[]}
-              currentIndex={0}
+            <LandingDashboard 
+              userName={userName} 
+              onQuickPrompt={(text) => append({ role: 'user', content: text })} 
             />
           ) : (
             messages.map((message, index) => {
@@ -367,7 +360,7 @@ export function ChatInterface({
           />
           <button
             type="submit"
-            disabled={isLoading || !input.trim()}
+            disabled={isLoading || !input || !input.trim()}
             className="bg-blue-600 hover:bg-blue-700 active:scale-90 text-white rounded-full p-3.5 flex items-center justify-center transition-all duration-200 disabled:opacity-50 shadow-md hover:shadow-blue-500/30 hover:scale-105"
           >
             <Send className="w-5 h-5 -ml-0.5" />

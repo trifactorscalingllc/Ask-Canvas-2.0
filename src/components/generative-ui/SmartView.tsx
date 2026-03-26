@@ -21,7 +21,8 @@ interface SmartViewProps {
 }
 
 export function SmartView({ viewType, data }: SmartViewProps) {
-    if (!data?.courses) {
+    const profile = data?.profile || [];
+    if (profile.length === 0) {
         return (
             <div className="my-6 p-8 bg-gray-50 dark:bg-gray-900/40 rounded-3xl border border-dashed border-gray-200 dark:border-gray-800 text-center">
                 <p className="text-sm font-medium text-gray-500">No academic data available to visualize. 📚</p>
@@ -37,15 +38,15 @@ export function SmartView({ viewType, data }: SmartViewProps) {
             const twoWeeksOut = new Date();
             twoWeeksOut.setDate(now.getDate() + 14);
 
-            data.courses.forEach((course: any) => {
-                course.assignments?.forEach((assignment: any) => {
-                    if (!assignment.dueAt) return;
-                    const dueDate = new Date(assignment.dueAt);
+            profile.forEach((course: any) => {
+                course.upcomingAssignments?.forEach((assignment: any) => {
+                    if (!assignment.due) return;
+                    const dueDate = new Date(assignment.due);
                     if (dueDate < now || dueDate > twoWeeksOut) return;
 
                     const dateStr = dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
                     if (!dateMap[dateStr]) dateMap[dateStr] = { points: 0, count: 0 };
-                    dateMap[dateStr].points += assignment.pointsPossible || 0;
+                    dateMap[dateStr].points += assignment.points || 0;
                     dateMap[dateStr].count += 1;
                 });
             });
@@ -128,16 +129,16 @@ export function SmartView({ viewType, data }: SmartViewProps) {
     // ── View 2: Urgency Triage Cards ──────────────────────────────────────────
     if (viewType === 'triage_cards') {
         const urgentItems = (() => {
-            const all = data.courses.flatMap((course: any) =>
-                (course.assignments || []).map((a: any) => ({
+            const all = profile.flatMap((course: any) =>
+                (course.upcomingAssignments || []).map((a: any) => ({
                     ...a,
-                    courseName: course.name
+                    courseName: course.courseName
                 }))
             );
             const now = new Date();
             return all
-                .filter((a: any) => a.dueAt && new Date(a.dueAt) > now)
-                .sort((a: any, b: any) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime())
+                .filter((a: any) => a.due && new Date(a.due) > now)
+                .sort((a: any, b: any) => new Date(a.due).getTime() - new Date(b.due).getTime())
                 .slice(0, 3);
         })();
 
@@ -162,7 +163,7 @@ export function SmartView({ viewType, data }: SmartViewProps) {
                                         {Math.ceil(hoursLeft / 24)}d left
                                     </div>
                                     <div className="px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-[9px] font-black text-gray-500">
-                                        {item.pointsPossible} PTS
+                                        {item.points} PTS
                                     </div>
                                 </div>
                             </div>
@@ -176,16 +177,16 @@ export function SmartView({ viewType, data }: SmartViewProps) {
     // ── View 3: Vertical Timeline List ────────────────────────────────────────
     if (viewType === 'timeline_list') {
         const timelineItems = (() => {
-            const all = data.courses.flatMap((course: any) =>
-                (course.assignments || []).map((a: any) => ({
+            const all = profile.flatMap((course: any) =>
+                (course.upcomingAssignments || []).map((a: any) => ({
                     ...a,
-                    courseName: course.name
+                    courseName: course.courseName
                 }))
             );
             const now = new Date();
             return all
-                .filter((a: any) => a.dueAt && new Date(a.dueAt) > now)
-                .sort((a: any, b: any) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime())
+                .filter((a: any) => a.due && new Date(a.due) > now)
+                .sort((a: any, b: any) => new Date(a.due).getTime() - new Date(b.due).getTime())
                 .slice(0, 15);
         })();
 
@@ -217,7 +218,7 @@ export function SmartView({ viewType, data }: SmartViewProps) {
                                         <div className="flex items-center gap-2">
                                             <span className="text-[10px] font-bold text-indigo-500/80">{item.courseName}</span>
                                             <span className="text-[10px] text-gray-400">•</span>
-                                            <span className="text-[10px] text-gray-500">{new Date(item.dueAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                            <span className="text-[10px] text-gray-500">{new Date(item.due).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                                         </div>
                                         <h4 className="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate pr-4">{item.name}</h4>
                                     </div>
