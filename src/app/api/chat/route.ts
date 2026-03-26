@@ -271,7 +271,7 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
                 const args = JSON.parse(tc.function.arguments || '{}')
                 try {
                   if (name === 'get_all_grades') return { role: 'tool', tool_call_id: tc.id, name, content: JSON.stringify(await get_all_grades(canvasKey)) }
-                  if (name === 'get_all_upcoming_assignments') return { role: 'tool', tool_call_id: tc.id, name, content: JSON.stringify(await get_all_upcoming_assignments(canvasKey, userData.canvas_cache as any)) }
+                  if (name === 'get_all_upcoming_assignments') return { role: 'tool', tool_call_id: tc.id, name, content: JSON.stringify(await get_all_upcoming_assignments(canvasKey)) }
                   if (name === 'get_assignment_details') return { role: 'tool', tool_call_id: tc.id, name, content: JSON.stringify(await get_assignment_details(canvasKey, args.course_id, args.assignment_id)) }
                   if (name === 'save_user_memory') {
                     await supabase.from('user_memories').insert({ user_id: user.id, memory_text: args.preference_text })

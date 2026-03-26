@@ -20,13 +20,14 @@ export async function fetchCanvas(endpoint: string, token: string, domain: strin
 }
 
 export async function get_active_courses(token: string) {
-  // Use include[]=term to get actual semester dates
-  const data = await fetchCanvas('/api/v1/courses?enrollment_state=active&include[]=term&per_page=100', token);
+  // Removing enrollment_state=active to ensure we see all courses the student is involved in.
+  // We'll filter for valid courses (with names) in-code.
+  const data = await fetchCanvas('/api/v1/courses?include[]=term&per_page=100', token);
   if (!Array.isArray(data)) return [];
 
   const mapped = data.map((c: any) => ({
     id: c.id,
-    name: c.name,
+    name: c.name || c.course_code, // Fallback to course_code if name is blank
     course_code: c.course_code,
     term: c.term, // name, start_at, end_at
   })).filter(c => c.id && c.name);
@@ -76,13 +77,14 @@ export async function get_all_upcoming_assignments(token: string, existingCourse
   }
 
   const now = new Date();
-  // Fetch up to 50 assignments per course to ensure we don't miss high-volume classes
-  const perPage = 50;
+  // Fetch up to 100 assignments per course to ensure we don't miss high-volume classes
+  const perPage = 100;
 
   const results = await Promise.allSettled(
     courses.map(async (course: any) => {
       try {
-        // REMOVED 'bucket=upcoming' to get EVERYTHING, then we filter manually for fidelity
+        // REMOVED 'bucket=upcoming' to get EVERYTHING, then we filter only for 'not graded' 
+        // to ensure we capture the full roster of work yet to be done.
         const fetchPromise = fetchCanvas(
           `/api/v1/courses/${course.id}/assignments?per_page=${perPage}&order_by=due_at`,
           token
@@ -103,16 +105,12 @@ export async function get_all_upcoming_assignments(token: string, existingCourse
             due_at: a.due_at,
             points_possible: a.points_possible,
             html_url: a.html_url,
-            is_graded: !!a.graded_at || !!a.submission?.graded_at,
+            is_graded: !!a.graded_at || !!a.submission?.graded_at || a.workflow_state === 'graded',
           }))
           .filter((a: any) => {
-            // FIDELITY FILTER: Only include if NOT graded OR due in the next 3 weeks
-            if (!a.due_at) return !a.is_graded; // Keep undated items if not graded
-            const dueDate = new Date(a.due_at);
-            const threeWeeksOut = new Date(now.getTime() + 21 * 24 * 60 * 60 * 1000);
-            const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-
-            return !a.is_graded && dueDate > oneDayAgo && dueDate < threeWeeksOut;
+            // EXHAUSTIVE FILTER: Include everything that isn't graded yet.
+            // Let the AI handle the temporal sorting/filtering based on the user's specific prompt.
+            return !a.is_graded;
           });
       } catch (err) {
         console.warn(`[CANVAS FETCH ERROR] Course ${course.id}: ${err}`);
