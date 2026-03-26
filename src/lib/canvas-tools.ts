@@ -430,16 +430,21 @@ async function legacy_get_all_upcoming_assignments(token: string, courses: any[]
 }
 
 export async function get_canvas_user_profile(token: string) {
-  const query = `
-    query {
-      currentUser {
-        name
-        avatarUrl
-      }
-    }
-  `;
-  const data = await fetchCanvasGraphQL(query, token);
-  return data?.data?.currentUser;
+  try {
+    const domain = process.env.CANVAS_DOMAIN || 'psu.instructure.com';
+    const res = await fetch(`https://${domain}/api/v1/users/self/profile`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return {
+      name: data.name || data.short_name,
+      avatarUrl: data.avatar_url
+    };
+  } catch (err) {
+    console.error('Error fetching Canvas profile:', err);
+    return null;
+  }
 }
 
 export async function get_user_profile(canvasKey: string) {

@@ -271,6 +271,65 @@ function cleanContent(raw: string): string {
     .trim()
 }
 
+// ── Message Feed Component ──────────────────────────────────────────────────
+function MessageFeed({ 
+  messages, 
+  isLoading, 
+  handleFeedback, 
+  feedbackState,
+  userAvatar,
+  allMessages
+}: { 
+  messages: Message[], 
+  isLoading: boolean, 
+  handleFeedback: any, 
+  feedbackState: any,
+  userAvatar?: string,
+  allMessages: Message[]
+}) {
+  return (
+    <div className="flex flex-col space-y-6 pb-24">
+      {messages.map((message, index) => {
+        const isLast = index === messages.length - 1;
+        
+        if (message.role === 'assistant') {
+          const cleaned = cleanContent(message.content);
+          const hasTools = (message.toolInvocations?.length ?? 0) > 0 || (message.tool_calls?.length ?? 0) > 0;
+          if (!cleaned && !hasTools) return null;
+          
+          return (
+            <AssistantBubble
+              key={message.id}
+              message={{ ...message, content: cleaned }}
+              isLast={isLast}
+              isStreaming={isLast && isLoading}
+              onFeedback={handleFeedback}
+              feedbackState={feedbackState}
+              allMessages={allMessages}
+              currentIndex={index}
+            />
+          );
+        }
+
+        // User Bubble
+        return (
+          <div key={message.id} className="flex justify-end gap-3 animate-in fade-in slide-in-from-right-3 duration-300">
+            <div className="max-w-[80%] md:max-w-[72%] bg-blue-600 text-white rounded-2xl rounded-br-sm px-5 py-3.5 shadow-md shadow-blue-500/10 transition-all hover:translate-x-[-2px]">
+              <p className="whitespace-pre-wrap leading-relaxed text-[15px] font-medium">{message.content}</p>
+            </div>
+            {userAvatar && (
+              <div className="shrink-0 w-9 h-9 rounded-full overflow-hidden shadow-sm mt-1 bg-white border border-gray-100 dark:border-gray-800 ring-2 ring-blue-500/10">
+                <img src={userAvatar} alt="You" className="w-full h-full object-cover" />
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {isLoading && <ThinkingBubble />}
+    </div>
+  );
+}
+
 export function ChatInterface({
   messages,
   input,
@@ -298,64 +357,46 @@ export function ChatInterface({
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] relative bg-gray-50 dark:bg-gray-900 mx-auto w-full border border-gray-200 dark:border-gray-700 shadow-sm rounded-xl overflow-hidden font-sans">
-
-      {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-white dark:bg-gray-900 min-h-0">
-        <div className="w-[90%] md:w-[75%] mx-auto space-y-5">
+      
+      {/* Messages Scroll Area */}
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-white dark:bg-gray-900 min-h-0 custom-scrollbar scroll-smooth">
+        <div className="w-[90%] md:w-[75%] mx-auto">
           {messages.length === 0 ? (
             <LandingDashboard 
               userName={userName} 
               onQuickPrompt={(text) => append({ role: 'user', content: text })} 
             />
           ) : (
-            messages.map((message, index) => {
-              const isLast = index === messages.length - 1;
-              if (message.role === 'assistant') {
-                const cleaned = cleanContent(message.content);
-                const hasTools = (message.toolInvocations?.length ?? 0) > 0 || (message.tool_calls?.length ?? 0) > 0;
-                // Only skip if BOTH content AND tools are empty
-                if (!cleaned && !hasTools) return null;
-                return (
-                  <AssistantBubble
-                    key={message.id}
-                    message={{ ...message, content: cleaned }}
-                    isLast={isLast}
-                    isStreaming={isLast && isLoading}
-                    onFeedback={handleFeedback}
-                    feedbackState={feedbackState}
-                    allMessages={messages}
-                    currentIndex={index}
-                  />
-                );
-              }
-              return (
-                <div key={message.id} className="flex justify-end gap-3 animate-in fade-in slide-in-from-right-3 duration-300">
-                  <div className="max-w-[80%] md:max-w-[72%] bg-blue-600 text-white rounded-2xl rounded-br-sm px-5 py-3.5 shadow-md">
-                    <p className="whitespace-pre-wrap leading-relaxed text-sm">{message.content}</p>
-                  </div>
-                  {userAvatar && (
-                    <div className="shrink-0 w-9 h-9 rounded-full overflow-hidden shadow-sm mt-1 bg-white">
-                      <img src={userAvatar} alt="You" className="w-full h-full object-cover" />
-                    </div>
-                  )}
-                </div>
-              );
-            })
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              <MessageFeed 
+                messages={messages} 
+                isLoading={isLoading}
+                handleFeedback={handleFeedback}
+                feedbackState={feedbackState}
+                userAvatar={userAvatar}
+                allMessages={messages}
+              />
+              <div ref={messagesEndRef} />
+            </div>
           )}
-
-          {/* Thinking dots while loading */}
-          {isLoading && <ThinkingBubble />}
-          <div ref={messagesEndRef} className="h-4" />
         </div>
       </div>
 
+      {/* Input Form Area */}
       <div className="p-4 bg-white dark:bg-gray-950 border-t border-gray-100 dark:border-gray-800 shrink-0 shadow-sm relative z-20">
-        <form onSubmit={sendMessage} className="flex items-center space-x-3 w-[90%] md:w-[75%] mx-auto">
+        <form 
+          onSubmit={(e) => {
+            console.log('[FORM] Sending message...');
+            sendMessage(e);
+          }} 
+          className="flex items-center space-x-3 w-[90%] md:w-[75%] mx-auto"
+        >
           <input
             type="text"
             value={input}
             onChange={handleInputChange}
             disabled={isLoading}
+            autoFocus
             placeholder="Ask about your Canvas data..."
             className="flex-1 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 rounded-full px-5 py-3.5 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 disabled:opacity-50 transition-all text-[15px]"
           />
