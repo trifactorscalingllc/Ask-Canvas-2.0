@@ -113,31 +113,32 @@ export async function get_upcoming_assignments(token: string, course_id: string)
 export async function get_all_upcoming_assignments(token: string, existingCourses?: any[], courseFilter?: string) {
   const now = new Date();
   const threeWeeksOut = new Date(now.getTime() + 21 * 24 * 60 * 60 * 1000);
+  const map = new Map(); // CourseID -> Course details
   let allAssignments: any[] = [];
   let scannedCourseNames: string[] = [];
   let hasMoreBeyondThreeWeeks = false;
 
   try {
-    // PHASE 8: GRAPHQL DEEP SYNC (The Nuclear Option)
+    // PHASE 8.1: ROBUST GRAPHQL DEEP SYNC (Combined Entry Points)
     const gqlQuery = `
       query allAssignments {
         allCourses {
           id
           name
           courseCode
-          term {
-            name
-            endAt
-          }
+          term { name endAt }
           assignmentsConnection {
-            nodes {
-              id
-              name
-              dueAt
-              pointsPossible
-              htmlUrl
-              gradedAt
-              workflowState
+            nodes { id name dueAt pointsPossible htmlUrl gradedAt workflowState }
+          }
+        }
+        courseEnrollments {
+          course {
+            id
+            name
+            courseCode
+            term { name endAt }
+            assignmentsConnection {
+              nodes { id name dueAt pointsPossible htmlUrl gradedAt workflowState }
             }
           }
         }
@@ -145,29 +146,36 @@ export async function get_all_upcoming_assignments(token: string, existingCourse
     `;
 
     const result = await fetchCanvasGraphQL(gqlQuery, token);
-    const gqlCourses = result?.data?.allCourses;
+    const gqlAllCourses = result?.data?.allCourses;
+    const gqlEnrollments = result?.data?.courseEnrollments;
 
-    if (Array.isArray(gqlCourses)) {
-      gqlCourses.forEach((course: any) => {
-        scannedCourseNames.push(course.name || course.courseCode);
-        const assignments = course.assignmentsConnection?.nodes;
-        if (Array.isArray(assignments)) {
-          assignments.forEach((a: any) => {
-            allAssignments.push({
-              course: course.name,
-              course_id: course.id,
-              semester: course.term?.name || 'Unknown',
-              term_end: course.term?.endAt,
-              name: a.name,
-              due_at: a.dueAt,
-              points_possible: a.pointsPossible,
-              html_url: a.htmlUrl,
-              is_graded: !!a.gradedAt || a.workflowState === 'graded'
-            });
+    // Helper to process a course object
+    const processCourse = (course: any) => {
+      if (!course || !course.id || map.has(course.id)) return;
+      map.set(course.id, course);
+      scannedCourseNames.push(course.name || course.courseCode);
+
+      const assignments = course.assignmentsConnection?.nodes;
+      if (Array.isArray(assignments)) {
+        assignments.forEach((a: any) => {
+          allAssignments.push({
+            course: course.name,
+            course_id: course.id,
+            semester: course.term?.name || 'Unknown',
+            term_end: course.term?.endAt,
+            name: a.name,
+            due_at: a.dueAt,
+            points_possible: a.pointsPossible,
+            html_url: a.htmlUrl,
+            is_graded: !!a.gradedAt || a.workflowState === 'graded'
           });
-        }
-      });
-    }
+        });
+      }
+    };
+
+    if (Array.isArray(gqlAllCourses)) gqlAllCourses.forEach(processCourse);
+    if (Array.isArray(gqlEnrollments)) gqlEnrollments.forEach((e: any) => processCourse(e.course));
+
   } catch (err) {
     console.warn(`[GRAPHQL ERROR] Falling back to REST: ${err}`);
     // FALLBACK TO STAGE 7 REST LOGIC (Legacy Safety Net)
