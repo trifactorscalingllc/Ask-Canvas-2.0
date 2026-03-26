@@ -177,7 +177,7 @@ export async function POST(req: Request) {
 [CONTEXT]
 Name: ${userData.name || "Student"}
 Current Date: ${new Date().toISOString()} (Use this to compare against 'term_end' dates from tools)
-Courses: ${JSON.stringify(userData.canvas_cache || [])}
+Courses: ${JSON.stringify((userData.canvas_cache as any[])?.map((c: any) => ({ id: c.id, name: c.name })) || [])}
 Pre-fetched (STALE/CONTEXT ONLY):
 - Grades: ${JSON.stringify(pGrades || "None")}
 Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
@@ -297,6 +297,11 @@ Memories: ${memories.data?.map((m: any) => m.memory_text).join('; ') || 'None'}
               // HEARTBEAT: After tools, before next LLM turn
               send("\u200B")
             } else {
+              // BLANK BOX AUTO-RETRY: If the first iteration yielded NOTHING, try one more time before giving up.
+              if (!combinedText && iterations === 1 && !anyToolsCalledAcrossIterations) {
+                history.push({ role: 'assistant', content: `[INTERNAL] Blank Box detected. Retrying once...` })
+                continue; // Skip setting loopFinished and try again
+              }
               loopFinished = true
             }
           }
