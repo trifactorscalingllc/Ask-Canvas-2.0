@@ -118,10 +118,12 @@ export async function fetch_canvas_graphql_context(token: string) {
   const query = `
     query OmnibusSync {
       courseEnrollments {
+        state
         course {
           id
           name
           courseCode
+          state
           term { name endAt }
           courseEnrollments {
             computedCurrentScore
@@ -159,9 +161,23 @@ export async function fetch_canvas_graphql_context(token: string) {
     }
 
     if (Array.isArray(enrollments)) {
-      enrollments.forEach((e: any) => {
+      // TS Soft-Filtering: Keep available or recently completed courses
+      const validStates = ['available', 'completed', 'active'];
+      const filteredEnrollments = enrollments.filter((e: any) => {
         const c = e.course;
-        if (!c || !c.id || map.has(c.id)) return;
+        if (!c || !c.id) return false;
+
+        const courseState = (c.state || '').toLowerCase();
+        const enrollState = (e.state || '').toLowerCase();
+
+        return validStates.includes(courseState) || validStates.includes(enrollState);
+      });
+
+      console.log(`[OMNIBUS REDUCER] Found ${filteredEnrollments.length} valid courses after TS soft-filtering (Total raw: ${enrollments.length})`);
+
+      filteredEnrollments.forEach((e: any) => {
+        const c = e.course;
+        if (map.has(c.id)) return;
 
         // Data Reduction & Compression
         const compressedAssignments = (c.assignmentsConnection?.nodes || [])
@@ -178,7 +194,7 @@ export async function fetch_canvas_graphql_context(token: string) {
           date: an.postedAt
         }));
 
-        const grade = c.courseEnrollments?.[0] || {};
+        const grade = (c.courseEnrollments || [])[0] || {};
 
         map.set(c.id, {
           courseName: c.name,
