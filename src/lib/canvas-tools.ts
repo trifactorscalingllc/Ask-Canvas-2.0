@@ -77,26 +77,26 @@ export async function get_all_upcoming_assignments(token: string, existingCourse
   }
 
   const now = new Date();
-  // Fetch up to 100 assignments per course to ensure we don't miss high-volume classes
+  const threeWeeksOut = new Date(now.getTime() + 21 * 24 * 60 * 60 * 1000);
   const perPage = 100;
 
-  const results = await Promise.allSettled(
-    courses.map(async (course: any) => {
-      try {
-        // REMOVED 'bucket=upcoming' to get EVERYTHING, then we filter only for 'not graded' 
-        // to ensure we capture the full roster of work yet to be done.
-        const fetchPromise = fetchCanvas(
-          `/api/v1/courses/${course.id}/assignments?per_page=${perPage}&order_by=due_at`,
-          token
-        );
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 8000));
+  // SCALING: Process courses in batches of 5 to prevent Vercel timeout/congestion
+  const batchSize = 5;
+  let allAssignments: any[] = [];
+  let hasMoreBeyondThreeWeeks = false;
 
-        const data: any = await Promise.race([fetchPromise, timeoutPromise]);
+  for (let i = 0; i < courses.length; i += batchSize) {
+    const batch = courses.slice(i, i + batchSize);
+    const results = await Promise.allSettled(
+      batch.map(async (course: any) => {
+        try {
+          const data: any = await fetchCanvas(
+            `/api/v1/courses/${course.id}/assignments?per_page=${perPage}&order_by=due_at`,
+            token
+          );
+          if (!Array.isArray(data)) return [];
 
-        if (!Array.isArray(data)) return [];
-
-        return data
-          .map((a: any) => ({
+          return data.map((a: any) => ({
             course: course.name,
             course_id: course.id,
             semester: course.term?.name || 'Unknown',
@@ -106,29 +106,50 @@ export async function get_all_upcoming_assignments(token: string, existingCourse
             points_possible: a.points_possible,
             html_url: a.html_url,
             is_graded: !!a.graded_at || !!a.submission?.graded_at || a.workflow_state === 'graded',
-          }))
-          .filter((a: any) => {
-            // EXHAUSTIVE FILTER: Include everything that isn't graded yet.
-            // Let the AI handle the temporal sorting/filtering based on the user's specific prompt.
-            return !a.is_graded;
-          });
-      } catch (err) {
-        console.warn(`[CANVAS FETCH ERROR] Course ${course.id}: ${err}`);
-        return [];
-      }
-    })
-  );
+          }));
+        } catch (err) {
+          console.warn(`[CANVAS FETCH ERROR] Course ${course.id}: ${err}`);
+          return [];
+        }
+      })
+    );
 
-  const all = results
-    .filter((r) => r.status === 'fulfilled')
-    .flatMap((r: any) => r.value)
-    .sort((a: any, b: any) => {
-      if (!a.due_at) return 1;
-      if (!b.due_at) return -1;
-      return new Date(a.due_at).getTime() - new Date(b.due_at).getTime();
-    });
+    const batchFlat = results
+      .filter((r) => r.status === 'fulfilled')
+      .flatMap((r: any) => r.value);
 
-  return all.slice(0, 50); // Final summary limit
+    allAssignments = [...allAssignments, ...batchFlat];
+  }
+
+  // FIDELITY & PERFORMANCE: 
+  // 1. Separate items by the 3-week window
+  // 2. Return the upcoming ones, and set the 'hasMore' flag for the AI
+  const upcoming = allAssignments.filter((a: any) => {
+    if (a.is_graded) return false;
+    if (!a.due_at) return true; // Keep undated items
+    const dueDate = new Date(a.due_at);
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    const isUpcoming = dueDate > oneDayAgo && dueDate < threeWeeksOut;
+    if (dueDate >= threeWeeksOut) hasMoreBeyondThreeWeeks = true;
+    return isUpcoming;
+  });
+
+  const sorted = upcoming.sort((a: any, b: any) => {
+    if (!a.due_at) return 1;
+    if (!b.due_at) return -1;
+    return new Date(a.due_at).getTime() - new Date(b.due_at).getTime();
+  });
+
+  return {
+    assignments: sorted.slice(0, 50),
+    hasMore: hasMoreBeyondThreeWeeks,
+    meta: {
+      total_found: allAssignments.length,
+      filtered_upcoming: sorted.length,
+      window_days: 21
+    }
+  };
 }
 
 export async function get_user_profile(canvasKey: string) {

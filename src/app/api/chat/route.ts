@@ -165,6 +165,15 @@ export async function POST(req: Request) {
 1. ALWAYS use your TOOLS to get live data if the user asks for current grades, assignments, or schedules. NEVER respond based on pre-fetched data alone.
 2. If you see assignments like "Bobby the Entrepreneur" in conversation history, still CALL 'get_all_upcoming_assignments' to verify if you are providing a summary.
 
+[API-IS-TRUTH POLICY]
+1. Canvas API Tools are the ONLY source of truth for grades, assignments, and schedules.
+2. 'user_memories' are ONLY for personalization (e.g., student preferences, nickname, desired tone). 
+3. NEVER assume an assignment is completed or a grade is final based on 'user_memories' or conversation history if the API tools show otherwise. API overrides everything.
+
+[3-WEEK HIERARCHY]
+1. Your tools default to a 21-day (3-week) window for speed and stability.
+2. If 'get_all_upcoming_assignments' returns 'hasMore: true', you MUST inform the user: "I've summarized the next 3 weeks, but there are more assignments further out. Would you like me to load the rest?"
+
 [CONTEXT]
 Name: ${userData.name || "Student"}
 Current Date: ${new Date().toISOString()} (Use this to compare against 'term_end' dates from tools)
