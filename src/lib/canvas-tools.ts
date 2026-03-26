@@ -19,20 +19,40 @@ export async function fetchCanvas(endpoint: string, token: string, domain: strin
   return response.json();
 }
 
-export async function get_active_courses(token: string) {
-  // Removing enrollment_state=active to ensure we see all courses the student is involved in.
-  // We'll filter for valid courses (with names) in-code.
-  const data = await fetchCanvas('/api/v1/courses?include[]=term&per_page=100', token);
+export async function get_dashboard_courses(token: string) {
+  // dashboard_cards returns exactly what the user sees on their home screen
+  const data = await fetchCanvas('/api/v1/dashboard/dashboard_cards', token);
   if (!Array.isArray(data)) return [];
-
-  const mapped = data.map((c: any) => ({
+  return data.map((c: any) => ({
     id: c.id,
-    name: c.name || c.course_code, // Fallback to course_code if name is blank
-    course_code: c.course_code,
-    term: c.term, // name, start_at, end_at
+    name: c.shortName || c.originalName,
+    course_code: c.courseCode,
   })).filter(c => c.id && c.name);
+}
 
-  return mapped;
+export async function get_active_courses(token: string) {
+  // Robust Discovery: Combine dashboard cards + standard courses
+  const [dash, courses] = await Promise.all([
+    get_dashboard_courses(token),
+    fetchCanvas('/api/v1/courses?include[]=term&per_page=100', token)
+  ]);
+
+  const all = Array.isArray(courses) ? [...dash, ...courses] : dash;
+
+  // Deduplicate by ID
+  const map = new Map();
+  all.forEach((c: any) => {
+    if (c.id && !map.has(c.id)) {
+      map.set(c.id, {
+        id: c.id,
+        name: c.name || c.shortName || c.course_code || 'Unnamed Course',
+        course_code: c.course_code,
+        term: c.term,
+      });
+    }
+  });
+
+  return Array.from(map.values()).filter(c => c.name !== 'Unnamed Course');
 }
 
 export async function get_current_grades(token: string, course_id: string) {
@@ -80,11 +100,15 @@ export async function get_all_upcoming_assignments(token: string, existingCourse
   const threeWeeksOut = new Date(now.getTime() + 21 * 24 * 60 * 60 * 1000);
   const perPage = 100;
 
-  // SCALING: Process courses in batches of 5 to prevent Vercel timeout/congestion
+  // SCALING: Concurrency control
   const batchSize = 5;
   let allAssignments: any[] = [];
   let hasMoreBeyondThreeWeeks = false;
 
+  // 1. Parallel Safety Net: Hit the Global Users endpoint while scanning individual courses
+  const globalSafetyPromise = fetchCanvas(`/api/v1/users/self/upcoming_assignments?per_page=100`, token).catch(() => []);
+
+  // 2. Individual Scan Phase
   for (let i = 0; i < courses.length; i += batchSize) {
     const batch = courses.slice(i, i + batchSize);
     const results = await Promise.allSettled(
@@ -121,12 +145,29 @@ export async function get_all_upcoming_assignments(token: string, existingCourse
     allAssignments = [...allAssignments, ...batchFlat];
   }
 
-  // FIDELITY & PERFORMANCE: 
-  // 1. Separate items by the 3-week window
-  // 2. Return the upcoming ones, and set the 'hasMore' flag for the AI
+  // 3. Merge Global Safety Data
+  const globalData: any = await globalSafetyPromise;
+  if (Array.isArray(globalData)) {
+    globalData.forEach((ga: any) => {
+      // If we missed this assignment ID in our per-course scan, add it.
+      if (!allAssignments.some(a => a.name === ga.name && a.course_id === ga.course_id)) {
+        allAssignments.push({
+          course: ga.context_name || 'Global',
+          course_id: ga.course_id,
+          name: ga.name,
+          due_at: ga.due_at,
+          points_possible: ga.points_possible,
+          html_url: ga.html_url,
+          is_graded: false // Upcoming endpoint only returns uncompleted items
+        });
+      }
+    });
+  }
+
+  // FIDELITY & PERFORMANCE
   const upcoming = allAssignments.filter((a: any) => {
     if (a.is_graded) return false;
-    if (!a.due_at) return true; // Keep undated items
+    if (!a.due_at) return true;
     const dueDate = new Date(a.due_at);
     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
@@ -141,9 +182,13 @@ export async function get_all_upcoming_assignments(token: string, existingCourse
     return new Date(a.due_at).getTime() - new Date(b.due_at).getTime();
   });
 
+  // SCAN SUMMARY TRACE: For total visibility
+  const scanSummary = `Scanned ${courses.length} courses: [${courses.map(c => c.name).join(', ')}]. Total un-graded items found: ${allAssignments.length}.`;
+
   return {
     assignments: sorted.slice(0, 50),
     hasMore: hasMoreBeyondThreeWeeks,
+    scan_trace: scanSummary,
     meta: {
       total_found: allAssignments.length,
       filtered_upcoming: sorted.length,
