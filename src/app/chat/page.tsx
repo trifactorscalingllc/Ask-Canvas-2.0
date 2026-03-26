@@ -6,7 +6,6 @@ import { ChatInterface } from '@/components/chat-interface'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Menu, Plus, MessageSquare } from 'lucide-react'
-import { useChat } from '@ai-sdk/react'
 import { fetchCanvasProfile } from '@/app/actions/canvas'
 
 export default function ChatPage() {
@@ -19,20 +18,6 @@ export default function ChatPage() {
 
   const supabase = createClient()
   const router = useRouter()
-
-  // UseChat Hook Integration
-  const { messages, input, setInput, handleSubmit, handleInputChange, isLoading, setMessages, append } = useChat({
-    api: '/api/chat',
-    body: { chatId: currentChatId, userName: userName || 'Student' },
-    initialMessages: [],
-    onResponse: (response: Response) => {
-      // Handle custom headers if needed
-    },
-    onFinish: (message: any) => {
-      // Save history in background
-      fetchChats();
-    }
-  } as any) as any;
 
   const fetchChats = async () => {
     const { data: { session } } = await supabase.auth.getSession()
@@ -54,7 +39,6 @@ export default function ChatPage() {
 
     if (chatRes.data) setChats(chatRes.data)
     
-    // Deep Sync: Fetch real name from Canvas
     try {
       const profile = await fetchCanvasProfile()
       if (profile) {
@@ -72,8 +56,6 @@ export default function ChatPage() {
 
   useEffect(() => {
     fetchChats()
-
-    // Listen for the global Navbar toggle signal
     const handleToggle = () => setIsSidebarOpen(prev => !prev)
     window.addEventListener('toggleSidebar', handleToggle)
     return () => window.removeEventListener('toggleSidebar', handleToggle)
@@ -81,14 +63,6 @@ export default function ChatPage() {
 
   const selectChat = (id: string | null) => {
     setCurrentChatId(id)
-    if (!id) {
-      setMessages([])
-    } else {
-      const selected = chats.find(c => c.id === id)
-      if (selected) {
-        setMessages(selected.messages || [])
-      }
-    }
     setIsSidebarOpen(false)
   }
 
@@ -136,16 +110,10 @@ export default function ChatPage() {
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col relative h-full">
         <ChatInterface
-          messages={messages}
-          input={input}
-          setInput={setInput}
-          sendMessage={handleSubmit}
-          isLoading={isLoading}
-          userEmail={userEmail}
+          currentChatId={currentChatId}
           userName={userName}
           userAvatar={userAvatar}
-          append={append}
-          handleInputChange={handleInputChange}
+          onFinish={fetchChats}
         />
       </div>
 
