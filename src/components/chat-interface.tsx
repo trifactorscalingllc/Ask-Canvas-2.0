@@ -7,11 +7,15 @@ import rehypeRaw from 'rehype-raw';
 import { Send, ThumbsUp, ThumbsDown, ExternalLink } from 'lucide-react';
 import { submitFeedback } from '@/app/actions/feedback';
 import { MermaidVisual, FileEmbed } from './chat-visuals';
+import { GradeChart } from './generative-ui/GradeChart';
+import { AssignmentTimeline } from './generative-ui/AssignmentTimeline';
+import { MermaidDiagram } from './generative-ui/MermaidDiagram';
 
 export interface Message {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'tool';
   content: string;
+  tool_calls?: any[];
   audit?: {
     score: number;
     description: string;
@@ -36,10 +40,28 @@ interface ChatInterfaceProps {
 function AssistantBubble({ message, isLast, isStreaming, onFeedback, feedbackState }: {
   message: Message;
   isLast: boolean;
-  isStreaming?: boolean;  // true while this message is still being streamed
+  isStreaming?: boolean;
   onFeedback: (id: string, q: string, r: string, helpful: boolean) => void;
   feedbackState: Record<string, 'up' | 'down'>;
 }) {
+  // Generative UI Interceptor Logic
+  const renderGenerativeUI = () => {
+    if (!message.tool_calls) return null;
+
+    return message.tool_calls.map((tc, idx) => {
+      const name = tc.function?.name;
+      const args = JSON.parse(tc.function?.arguments || '{}');
+
+      if (name === 'render_grade_chart') {
+        return <GradeChart key={idx} data={args.data} />;
+      }
+      if (name === 'render_timeline') {
+        return <AssignmentTimeline key={idx} assignments={args.assignments} />;
+      }
+      return null;
+    });
+  };
+
   return (
     <div className="flex justify-start gap-3 animate-in fade-in slide-in-from-left-3 duration-400">
       {/* Robot Avatar */}
@@ -56,7 +78,6 @@ function AssistantBubble({ message, isLast, isStreaming, onFeedback, feedbackSta
                 const match = /language-(\w+)/.exec(className || '')
                 const value = String(children).replace(/\n$/, '')
 
-                // Only render Mermaid once stream is done — prevents freeze/glitch
                 if (match && match[1] === 'mermaid') {
                   if (isStreaming) {
                     return (
@@ -66,7 +87,7 @@ function AssistantBubble({ message, isLast, isStreaming, onFeedback, feedbackSta
                       </div>
                     )
                   }
-                  return <MermaidVisual chart={value} />
+                  return <MermaidDiagram chart={value} />
                 }
 
                 return (
@@ -76,25 +97,25 @@ function AssistantBubble({ message, isLast, isStreaming, onFeedback, feedbackSta
                 )
               },
               table: ({ children }) => (
-                <div className="my-4 overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm transition-all hover:shadow-md">
-                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
+                <div className="my-6 overflow-x-auto rounded-2xl border border-gray-200 dark:border-gray-700 shadow-xl transition-all hover:shadow-2xl">
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900 font-sans">
                     {children}
                   </table>
                 </div>
               ),
-              thead: ({ children }) => <thead className="bg-gray-50 dark:bg-gray-800">{children}</thead>,
+              thead: ({ children }) => <thead className="bg-gray-50/80 dark:bg-gray-800/80 backdrop-blur-sm">{children}</thead>,
               th: ({ children }) => (
-                <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider tabular-nums">
+                <th className="px-6 py-4 text-left text-[10px] font-extrabold text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em] tabular-nums">
                   {children}
                 </th>
               ),
               td: ({ children }) => (
-                <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 border-t border-gray-100 dark:border-gray-800 tabular-nums">
+                <td className="px-6 py-5 text-sm font-medium text-gray-700 dark:text-gray-200 border-t border-gray-50 dark:border-gray-800 tabular-nums leading-relaxed">
                   {children}
                 </td>
               ),
               tr: ({ children }) => (
-                <tr className="hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-colors">
+                <tr className="hover:bg-blue-50/30 dark:hover:bg-blue-900/10 transition-all duration-200">
                   {children}
                 </tr>
               ),
@@ -119,6 +140,7 @@ function AssistantBubble({ message, isLast, isStreaming, onFeedback, feedbackSta
           >
             {message.content}
           </ReactMarkdown>
+          {renderGenerativeUI()}
           {/* Live stream cursor */}
           {isStreaming && <span className="inline-block w-0.5 h-4 bg-blue-500 ml-0.5 animate-pulse align-middle rounded-full" />}
         </div>

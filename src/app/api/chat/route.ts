@@ -71,6 +71,54 @@ const tools = [
   {
     type: 'function',
     function: {
+      name: 'render_grade_chart',
+      description: 'Render an interactive BarChart of assignment grades.',
+      parameters: {
+        type: 'object',
+        properties: {
+          data: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                score: { type: 'number' },
+                max: { type: 'number' }
+              }
+            }
+          }
+        },
+        required: ['data']
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'render_timeline',
+      description: 'Render a chronological vertical timeline of upcoming assignments.',
+      parameters: {
+        type: 'object',
+        properties: {
+          assignments: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                dueAt: { type: 'string' },
+                courseName: { type: 'string' }
+              }
+            }
+          }
+        },
+        required: ['assignments']
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'save_user_memory',
       description: 'Save a learned fact or preference about the user.',
       parameters: {
@@ -258,6 +306,9 @@ CURRENT DATE: ${currentDate}
 
                     if (error) throw error;
                     return { role: 'tool', tool_call_id: tc.id, name, content: JSON.stringify(chunks || []) };
+                  }
+                  if (name === 'render_grade_chart' || name === 'render_timeline') {
+                    return { role: 'tool', tool_call_id: tc.id, name, content: "UI Rendered." }
                   }
                   if (name === 'get_assignment_details') return { role: 'tool', tool_call_id: tc.id, name, content: JSON.stringify(await get_assignment_details(canvasKey, args.course_id, args.assignment_id)) }
                   if (name === 'save_user_memory') {
