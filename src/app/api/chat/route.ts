@@ -14,20 +14,12 @@ import { gradeResponse } from '@/lib/auditor'
 const openai = observeOpenAI(new OpenAI({
   baseURL: 'https://api.cerebras.ai/v1',
   apiKey: process.env.CEREBRAS_API_KEY || 'dummy_key',
-}), {
-  secretKey: process.env.LANGFUSE_SECRET_KEY,
-  publicKey: process.env.LANGFUSE_PUBLIC_KEY,
-  baseUrl: process.env.LANGFUSE_HOST
-})
+}))
 
 // Client for embeddings (Using proxy/unified key as requested)
 const embeddingClient = observeOpenAI(new OpenAI({
   apiKey: process.env.CEREBRAS_API_KEY
-}), {
-  secretKey: process.env.LANGFUSE_SECRET_KEY,
-  publicKey: process.env.LANGFUSE_PUBLIC_KEY,
-  baseUrl: process.env.LANGFUSE_HOST
-})
+}))
 
 const startTime = Date.now()
 
@@ -303,7 +295,7 @@ CURRENT DATE: ${currentDate}
                     });
                     const embedding = embeddingResponse.data[0].embedding;
 
-                    const { data: chunks, error } = await supabase.rpc('match_course_documents', {
+                    const { data: chunks, error } = await (supabase.rpc as any)('match_course_documents', {
                       query_embedding: embedding,
                       match_threshold: 0.5,
                       match_count: 3,
