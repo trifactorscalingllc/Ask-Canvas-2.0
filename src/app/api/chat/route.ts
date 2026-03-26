@@ -11,8 +11,16 @@ import { getProviderStatus, updateRateLimits, updateModelAvailability } from '@/
 import { gradeResponse } from '@/lib/auditor'
 
 const openai = new OpenAI({
-  baseURL: 'https://api.cerebras.ai/v1',
+  baseURL: 'https://cerebras.helicone.ai/v1',
   apiKey: process.env.CEREBRAS_API_KEY || 'dummy_key',
+  defaultHeaders: {
+    "Helicone-Auth": `Bearer ${process.env.HELICONE_API_KEY}`
+  }
+})
+
+// Client for embeddings (Cerebras is LLM only)
+const embeddingClient = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
 })
 
 const startTime = Date.now()
@@ -232,6 +240,24 @@ CURRENT DATE: ${currentDate}
                       history.push({ role: 'assistant', content: `[INTERNAL] ${res.scan_trace}` });
                     }
                     return { role: 'tool', tool_call_id: tc.id, name, content: JSON.stringify(res) };
+                  }
+                  if (name === 'query_syllabus_policy') {
+                    console.log("[INTERNAL] Generating Embedding for RAG Query...");
+                    const embeddingResponse = await embeddingClient.embeddings.create({
+                      model: 'text-embedding-3-small',
+                      input: args.question
+                    });
+                    const embedding = embeddingResponse.data[0].embedding;
+
+                    const { data: chunks, error } = await supabase.rpc('match_course_documents', {
+                      query_embedding: embedding,
+                      match_threshold: 0.5,
+                      match_count: 3,
+                      filter_course_id: args.course_id
+                    });
+
+                    if (error) throw error;
+                    return { role: 'tool', tool_call_id: tc.id, name, content: JSON.stringify(chunks || []) };
                   }
                   if (name === 'get_assignment_details') return { role: 'tool', tool_call_id: tc.id, name, content: JSON.stringify(await get_assignment_details(canvasKey, args.course_id, args.assignment_id)) }
                   if (name === 'save_user_memory') {
