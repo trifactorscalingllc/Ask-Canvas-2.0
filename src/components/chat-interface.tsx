@@ -17,6 +17,7 @@ export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'tool';
   content: string;
+  toolInvocations?: any[];
   tool_calls?: any[];
   audit?: {
     score: number;
@@ -48,12 +49,38 @@ function AssistantBubble({ message, isLast, isStreaming, onFeedback, feedbackSta
 }) {
   // Generative UI Interceptor Logic
   const renderGenerativeUI = () => {
-    if (!message.tool_calls) return null;
+    const invocations = message.toolInvocations || [];
 
-    return message.tool_calls.map((tc, idx) => {
-      const name = tc.function?.name;
-      const args = JSON.parse(tc.function?.arguments || '{}');
+    // Legacy support for tool_calls if needed
+    if (invocations.length === 0 && message.tool_calls) {
+      return message.tool_calls.map((tc, idx) => {
+        const name = tc.function?.name;
+        const args = JSON.parse(tc.function?.arguments || '{}');
+        return renderComponent(name, args, 'result', idx);
+      });
+    }
 
+    return invocations.map((ti, idx) => {
+      return renderComponent(ti.toolName, ti.args, ti.state, idx, ti.result);
+    });
+  };
+
+  const renderComponent = (name: string, args: any, state: string, idx: number, result?: any) => {
+    // 1. Handle Loading State
+    if (state === 'call') {
+      return (
+        <div key={idx} className="my-6 p-6 bg-blue-50/50 dark:bg-blue-900/10 rounded-3xl border border-dashed border-blue-200 dark:border-blue-800 flex flex-col items-center justify-center gap-4 animate-pulse">
+          <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <div className="text-center">
+            <p className="text-sm font-bold text-blue-600 dark:text-blue-400">Generating Academic Asset...</p>
+            <p className="text-[10px] text-gray-400 uppercase tracking-widest mt-1">Retrieving Canvas Intelligence</p>
+          </div>
+        </div>
+      );
+    }
+
+    // 2. Handle Result State
+    try {
       if (name === 'render_grade_chart') {
         return <GradeChart key={idx} data={args.data} />;
       }
@@ -67,7 +94,15 @@ function AssistantBubble({ message, isLast, isStreaming, onFeedback, feedbackSta
         return <ProgressCircle key={idx} data={args.data} title={args.title} />;
       }
       return null;
-    });
+    } catch (err) {
+      console.error('Generative UI Render Error:', err);
+      return (
+        <div key={idx} className="my-4 p-4 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900 rounded-xl flex items-center gap-3">
+          <div className="w-2 h-2 rounded-full bg-red-500" />
+          <span className="text-xs font-medium text-red-600 dark:text-red-400">Failed to load dashboard data.</span>
+        </div>
+      );
+    }
   };
 
   return (
