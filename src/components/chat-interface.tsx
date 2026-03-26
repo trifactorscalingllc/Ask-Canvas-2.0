@@ -328,8 +328,9 @@ export function ChatInterface({
               const isLast = index === messages.length - 1;
               if (message.role === 'assistant') {
                 const cleaned = cleanContent(message.content);
-                // Skip if there's no visible content (prevents empty loading bubbles)
-                if (!cleaned) return null;
+                const hasTools = (message.toolInvocations?.length ?? 0) > 0 || (message.tool_calls?.length ?? 0) > 0;
+                // Only skip if BOTH content AND tools are empty
+                if (!cleaned && !hasTools) return null;
                 return (
                   <AssistantBubble
                     key={message.id}
