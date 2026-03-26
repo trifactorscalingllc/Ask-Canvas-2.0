@@ -72,7 +72,7 @@ export const AcademicDashboard: React.FC<AcademicDashboardProps> = ({ data }) =>
                                 tick={{ fontSize: 10, fill: '#6b7280' }}
                             />
                             <Tooltip
-                                cursor={{ fill: 'rgba(59, 130, 246, 0.05)', radius: [8, 8, 0, 0] }}
+                                cursor={{ fill: 'rgba(59, 130, 246, 0.05)' }}
                                 contentStyle={{
                                     backgroundColor: 'rgba(255, 255, 255, 0.8)',
                                     backdropFilter: 'blur(8px)',
