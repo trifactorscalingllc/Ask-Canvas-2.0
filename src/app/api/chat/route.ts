@@ -62,7 +62,7 @@ const tools = [
     type: 'function',
     function: {
       name: 'get_full_academic_context',
-      description: 'Call this tool WHENEVER the user asks for ANY Canvas data, information, lists of assignments, grades, or class schedules. This tool returns the complete academic profile in one call.',
+      description: 'Call this tool WHENEVER the user asks for ANY Canvas data, information, lists of assignments, grades, or class schedules. IMPORTANT: You MUST present the returned data using GitHub-flavored Markdown Tables. Avoid conversational filler.',
       parameters: { type: 'object', properties: {} },
     },
   },
