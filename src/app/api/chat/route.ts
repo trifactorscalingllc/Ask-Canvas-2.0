@@ -64,11 +64,18 @@ const tools = [
   {
     type: 'function',
     function: {
-      name: 'render_academic_dashboard',
-      description: 'Render a high-fidelity interactive academic dashboard. Use this for overall term status, grade summaries, or when the user asks "How am I doing?". Call this with NO arguments after fetching context.',
+      name: 'render_smart_view',
+      description: 'Render a premium React-based academic view. Use this to show assignments, workload, or priorities. NEVER use raw data tables.',
       parameters: {
         type: 'object',
-        properties: {}
+        properties: {
+          viewType: {
+            type: 'string',
+            enum: ['workload_chart', 'triage_cards', 'timeline_list'],
+            description: 'The type of visual asset to render.'
+          }
+        },
+        required: ['viewType']
       },
     },
   },
@@ -76,96 +83,7 @@ const tools = [
     type: 'function',
     function: {
       name: 'get_full_academic_context',
-      description: 'Call this tool WHENEVER the user asks for ANY Canvas data, information, lists of assignments, grades, or class schedules. IMPORTANT: You MUST present the returned data using GitHub-flavored Markdown Tables. Avoid conversational filler.',
-      parameters: { type: 'object', properties: {} },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'render_grade_chart',
-      description: 'Render an interactive BarChart of assignment grades.',
-      parameters: {
-        type: 'object',
-        properties: {
-          data: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                name: { type: 'string' },
-                score: { type: 'number' },
-                max: { type: 'number' }
-              }
-            }
-          }
-        },
-        required: ['data']
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'render_timeline',
-      description: 'Render a chronological vertical timeline of upcoming assignments.',
-      parameters: {
-        type: 'object',
-        properties: {
-          assignments: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                name: { type: 'string' },
-                dueAt: { type: 'string' },
-                courseName: { type: 'string' }
-              }
-            }
-          }
-        },
-        required: ['assignments']
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'render_progress_circle',
-      description: 'Render a radial Progress Circle chart for visualizing grade distributions or student term progress.',
-      parameters: {
-        type: 'object',
-        properties: {
-          data: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                name: { type: 'string' },
-                value: { type: 'number', description: '0-100 percentage' },
-                fill: { type: 'string', description: 'Hex color' }
-              }
-            }
-          },
-          title: { type: 'string' }
-        },
-        required: ['data']
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'render_workload_chart',
-      description: 'Render a modern BarChart showing upcoming point distribution and workload peaks for the next 14 days. Call this when the user asks about workload or upcoming point values.',
-      parameters: { type: 'object', properties: {} },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'render_triage_board',
-      description: 'Render a specialized card-grid showing the top 3 most urgent assignments. Call this for "What should I do next?" or priority triage questions.',
+      description: 'Fetch absolute academic state (grades, assignments, courses). Call this before rendering any smart view.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -232,37 +150,29 @@ export async function POST(req: Request) {
           const limits = status.cerebras_rate_limits;
           history.push({ role: 'assistant', content: `[INTERNAL] Rate Limit Status: ${limits.requests_remaining}/${limits.requests_limit} reqs, ${limits.tokens_remaining} tokens left.` });
         }
-        // Refresh models once in a while
-        if (Math.random() > 0.9) {
-          updateModelAvailability(process.env.CEREBRAS_API_KEY!).catch(() => null);
-        }
 
         try {
           const [memories] = await Promise.all([
             supabase.from('user_memories').select('memory_text').eq('user_id', user.id),
           ])
 
-          const systemPrompt = `You are "Ask Canvas Assistant" v2.1. 
+          const systemPrompt = `You are "Ask Canvas Assistant" v2.5 (Smart View Architecture). 
 CURRENT DATE: ${currentDate}
 
-[OMNIBUS PROTOCOL: ADAPTIVE UI MATRIX]
-Choose the most reliable display format based on intent:
+[OMNIBUS PROTOCOL: SMART VIEW ORCHESTRATION]
+You are a premium academic agent. You NEVER output raw data tables in text.
 
-1. INTENT: Overall Status / Grade Trends -> 'render_academic_dashboard'
-2. INTENT: Immediate Priorities / Triage (< 5 items) -> 'render_triage_board'
-3. INTENT: Workload Volume / Point Forecasting -> 'render_workload_chart'
-4. INTENT: Deep-Dives / Massive Lists (5+ items) -> 'Markdown Table' (DO NOT use cards/charts for massive lists)
-5. INTENT: Narrow Facts (Specific date/detail) -> 'Plain Text'
-
-[EXECUTION PATH]
-- Always call 'get_full_academic_context' first.
-- Choose ONE visual asset above.
-- Call the tool with NO arguments.
-- After calling a UI tool, STOP generating text immediately.
+1. DATA GATHERING: Always call 'get_full_academic_context' first.
+2. VISUALIZATION: Choose the best 'viewType' for the request:
+   - 'workload_chart': Performance forecasting & point trends.
+   - 'triage_cards': Immediate priorities (< 5 items) with urgency indicators.
+   - 'timeline_list': Sequential schedules or massive lists of tasks.
+3. EXECUTION: Call 'render_smart_view' exactly ONCE.
+4. CLOSING: After the tool call, provide a brief (1-2 sentence) encouraging status summary.
 
 [FORMATTING]
-1. Mermaid graphs: Wrap in \`\`\`mermaid blocks.
-2. NO WALLS OF TEXT: If a visual tool is called, eliminate all conversational summary.
+1. NO RAW TABLES: Absolutely forbidden. Use Smart Views.
+2. NO WALLS OF TEXT: Keep conversational filler to 1-2 sentences max when a tool is used.
 
 [AI-IS-TRUTH POLICY]
 1. Academic data MUST come from the tools. No hallucination.`;
@@ -297,32 +207,17 @@ Choose the most reliable display format based on intent:
             // SECURITY: If we are close to Vercel's 60s limit (55s), force stop.
             const elapsed = Date.now() - startTime
             if (elapsed > 55000) {
-              const timeoutMsg = iterations === 1 && !combinedText
-                ? "(Note: Request timed out during initial data fetch. Please try a smaller date range.)"
-                : "(Note: Results partial due to processing limits)";
-              send("\n\n" + timeoutMsg)
+              send("\n\n(Note: Results partial due to processing limits)");
               history.push({ role: 'assistant', content: `[INTERNAL] Timeout reached at ${elapsed} ms.Stopping iterations.` })
               loopFinished = true
               break
             }
 
-            // HEARTBEAT: Explicitly send a character before starting a long LLM turn
+            // HEARTBEAT
             send("\u200B")
-            if (iterations > 1) send("\n\n(Scanning detailed academic context...)")
             history.push({ role: 'assistant', content: `[INTERNAL] Starting AI iteration ${iterations}...` })
 
             const turnStream = await getCompletion([{ role: 'system', content: systemPrompt }, ...currentHistory]);
-
-            // Track rate limits from the response
-            try {
-              const streamWithResponse = turnStream as any;
-              if (streamWithResponse.response) {
-                // Awaiting here to ensure it persists before next chunk/loop ends
-                await updateRateLimits(streamWithResponse.response.headers);
-              }
-            } catch (err) {
-              console.warn('[MONITOR] Failed to capture headers:', err);
-            }
 
             let turnText = ''
             let turnToolCalls: any[] = []
@@ -350,7 +245,6 @@ Choose the most reliable display format based on intent:
 
             if (turnToolCalls.length > 0) {
               anyToolsCalledAcrossIterations = true
-              // HEARTBEAT: Before tool calls
               send("\u200B")
               history.push({ role: 'assistant', content: `[INTERNAL] Executing tool calls: ${turnToolCalls.map(tc => tc.function.name).join(', ')}` })
 
@@ -360,35 +254,15 @@ Choose the most reliable display format based on intent:
                 try {
                   if (name === 'get_full_academic_context') {
                     const res = await fetch_canvas_graphql_context(canvasKey);
-                    if (res.scan_trace) {
-                      history.push({ role: 'assistant', content: `[INTERNAL] ${res.scan_trace}` });
-                    }
                     return { role: 'tool', tool_call_id: tc.id, name, content: JSON.stringify(res) };
                   }
-                  if (name === 'query_syllabus_policy') {
-                    console.log("[INTERNAL] Generating Embedding for RAG Query...");
-                    const embeddingResponse = await embeddingClient.embeddings.create({
-                      model: 'text-embedding-3-small',
-                      input: args.question
-                    });
-                    const embedding = embeddingResponse.data[0].embedding;
-
-                    const { data: chunks, error } = await (supabase.rpc as any)('match_course_documents', {
-                      query_embedding: embedding,
-                      match_threshold: 0.5,
-                      match_count: 3,
-                      filter_course_id: args.course_id
-                    });
-
-                    if (error) throw error;
-                    return { role: 'tool', tool_call_id: tc.id, name, content: JSON.stringify(chunks || []) };
+                  if (name === 'render_smart_view') {
+                    // HANDOFF: UI trigger stops iterations after the summary is generated in the NEXT turn
+                    // or if the model already provided text alongside the tool.
+                    // Actually, the user wants a summary AFTER the tool call.
+                    // So we must allow one more iteration.
+                    return { role: 'tool', tool_call_id: tc.id, name, content: "UI Rendered. Provide summary." }
                   }
-                  if (name === 'render_grade_chart' || name === 'render_timeline' || name === 'render_academic_dashboard' || name === 'render_progress_circle') {
-                    // HANDOFF PROTOCOL: If a UI tool is called, we STOP the generation loop.
-                    loopFinished = true
-                    return { role: 'tool', tool_call_id: tc.id, name, content: "UI Rendered. Turn complete." }
-                  }
-                  if (name === 'get_assignment_details') return { role: 'tool', tool_call_id: tc.id, name, content: JSON.stringify(await get_assignment_details(canvasKey, args.course_id, args.assignment_id)) }
                   if (name === 'save_user_memory') {
                     await supabase.from('user_memories').insert({ user_id: user.id, memory_text: args.preference_text })
                     return { role: 'tool', tool_call_id: tc.id, name, content: "Stored." }
@@ -401,35 +275,19 @@ Choose the most reliable display format based on intent:
               currentHistory.push(assistantMsg)
               results.forEach(r => currentHistory.push(r))
 
-              // HEARTBEAT: After tools, before next LLM turn
-              send("\u200B")
-            } else {
-              // BLANK BOX AUTO-RETRY: If the first iteration yielded NOTHING, try one more time before giving up.
-              if (!combinedText && iterations === 1 && !anyToolsCalledAcrossIterations) {
-                history.push({ role: 'assistant', content: `[INTERNAL] Blank Box detected. Retrying once...` })
-                continue; // Skip setting loopFinished and try again
+              // If render_smart_view was called, we allow one more iteration for the summary then stop.
+              if (turnToolCalls.some(tc => tc.function.name === 'render_smart_view')) {
+                // Continue to get the closing summary
               }
+            } else {
               loopFinished = true
             }
           }
 
-          // BLANK BOX DETECTION
-          if (!combinedText && iterations >= 1 && !anyToolsCalledAcrossIterations) {
-            const blankError = "Blank Box - Empty AI Response. This could be due to rate limits or an internal model failure.";
-            history.push({ role: 'assistant', content: `[INTERNAL] ${blankError}` });
-            await logError({ userId: user?.id, userPrompt: lastPrompt, err: new Error(blankError) });
-            // Send a fallback message so the user isn't stuck with a blank box
-            send("(The assistant provided an empty response. This usually indicates a temporary issue with the AI provider. Please try again.)");
-          }
-
           history.push({ role: 'assistant', content: combinedText })
-          // Ensure we capture the ID for new chats so the auditor can update them
           activeChatId = await saveHistory(supabase, user.id, history, activeChatId)
 
-          console.log(`[CHAT] Turn complete.Triggering auditor for chatId: ${activeChatId} `)
-
           try {
-            // AUDIT: Await before closing to ensure Vercel doesn't kill the process
             await gradeResponse({
               userId: user.id,
               chatId: activeChatId,
@@ -437,13 +295,12 @@ Choose the most reliable display format based on intent:
               agentResponse: combinedText,
               history: history
             });
-            console.log('[CHAT] Auditor finished successfully');
           } catch (e) {
             console.error('[AUDITOR] Trigger Error:', e);
           }
 
         } catch (err: any) {
-          const timeoutMsg = "\n\n(Connection Trace: v2.0.2-timeboxed) Processing took too long. History saved. Please refresh.";
+          const timeoutMsg = "\n\n(Connection Trace: v2.5.0-smartview) Processing took too long. History saved. Please refresh.";
           send(timeoutMsg);
           await logError({ userId: user?.id, userPrompt: lastPrompt, agentResponse: combinedText + timeoutMsg, err });
         } finally {
@@ -461,7 +318,7 @@ Choose the most reliable display format based on intent:
     })
 
   } catch (err: any) {
-    await logError({ err, userPrompt: 'Initial sync/setup phase (Pre-stream)' });
+    await logError({ err, userPrompt: 'Initial sync/setup phase' });
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }

@@ -7,13 +7,8 @@ import rehypeRaw from 'rehype-raw';
 import { Send, ThumbsUp, ThumbsDown, ExternalLink } from 'lucide-react';
 import { submitFeedback } from '@/app/actions/feedback';
 import { MermaidVisual, FileEmbed } from './chat-visuals';
-import { GradeChart } from './generative-ui/GradeChart';
-import { AssignmentTimeline } from './generative-ui/AssignmentTimeline';
-import { ProgressCircle } from './generative-ui/ProgressCircle';
 import { MermaidDiagram } from './generative-ui/MermaidDiagram';
-import { AcademicDashboard } from './generative-ui/AcademicDashboard';
-import { WorkloadChart } from './generative-ui/WorkloadChart';
-import { TriageBoard } from './generative-ui/TriageBoard';
+import { SmartView } from './generative-ui/SmartView';
 
 export interface Message {
   id: string;
@@ -89,15 +84,10 @@ function AssistantBubble({ message, isLast, isStreaming, onFeedback, feedbackSta
 
     // 2. Handle Result State
     try {
-      if (name === 'render_grade_chart') {
-        return <GradeChart key={idx} data={args.data} />;
-      }
-      if (name === 'render_timeline') {
-        return <AssignmentTimeline key={idx} assignments={args.assignments} />;
-      }
-      if (name === 'render_academic_dashboard' || name === 'render_workload_chart' || name === 'render_triage_board') {
+      if (name === 'render_smart_view') {
+        const viewType = args.viewType;
         // SMART HANDOFF: Find the most recent 'get_full_academic_context' result in history
-        let dashboardData = args;
+        let dashboardData = null;
         for (let i = currentIndex; i >= 0; i--) {
           const prevMsg = allMessages[i];
           const contextInvocation = prevMsg.toolInvocations?.find(
@@ -108,13 +98,7 @@ function AssistantBubble({ message, isLast, isStreaming, onFeedback, feedbackSta
             break;
           }
         }
-
-        if (name === 'render_workload_chart') return <WorkloadChart key={idx} data={dashboardData} />;
-        if (name === 'render_triage_board') return <TriageBoard key={idx} data={dashboardData} />;
-        return <AcademicDashboard key={idx} data={dashboardData} />;
-      }
-      if (name === 'render_progress_circle') {
-        return <ProgressCircle key={idx} data={args.data} title={args.title} />;
+        return <SmartView key={idx} viewType={viewType} data={dashboardData} />;
       }
       return null;
     } catch (err) {
