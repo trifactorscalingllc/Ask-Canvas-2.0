@@ -156,6 +156,22 @@ const tools = [
   {
     type: 'function',
     function: {
+      name: 'render_workload_chart',
+      description: 'Render a modern BarChart showing upcoming point distribution and workload peaks for the next 14 days. Call this when the user asks about workload or upcoming point values.',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'render_triage_board',
+      description: 'Render a specialized card-grid showing the top 3 most urgent assignments. Call this for "What should I do next?" or priority triage questions.',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'save_user_memory',
       description: 'Save a learned fact or preference about the user.',
       parameters: {
@@ -229,17 +245,24 @@ export async function POST(req: Request) {
           const systemPrompt = `You are "Ask Canvas Assistant" v2.1. 
 CURRENT DATE: ${currentDate}
 
-[OMNIBUS PROTOCOL: ADAPTIVE UI]
-You are an intelligent academic assistant. You have three ways to display data. Choose the most reliable and appropriate format based on the user's request and the size of the data:
+[OMNIBUS PROTOCOL: ADAPTIVE UI MATRIX]
+Choose the most reliable display format based on intent:
 
-1. FORMAT 1 (Dashboard Tool): If the user asks for high-level overviews (e.g., "How am I doing overall?" or "Show me my grade trends"), and the data is manageable, call 'get_full_academic_context' then 'render_academic_dashboard' with NO arguments. After calling the dashboard tool, STOP generating text immediately.
-2. FORMAT 2 (Markdown Tables): If the user asks for a massive list (e.g., "Show me all my assignments for the semester") OR if the data payload is too complex for a chart, DO NOT call the dashboard tool. Instead, call 'get_full_academic_context' and then output a clean, chronological GitHub-Flavored Markdown table with appropriate columns.
-3. FORMAT 3 (Direct Response): If the user asks a very specific, narrow question (e.g., "When is my next quiz?"), just answer them directly using standard text and bolding after calling the relevant tool. No charts or tables needed.
+1. INTENT: Overall Status / Grade Trends -> 'render_academic_dashboard'
+2. INTENT: Immediate Priorities / Triage (< 5 items) -> 'render_triage_board'
+3. INTENT: Workload Volume / Point Forecasting -> 'render_workload_chart'
+4. INTENT: Deep-Dives / Massive Lists (5+ items) -> 'Markdown Table' (DO NOT use cards/charts for massive lists)
+5. INTENT: Narrow Facts (Specific date/detail) -> 'Plain Text'
+
+[EXECUTION PATH]
+- Always call 'get_full_academic_context' first.
+- Choose ONE visual asset above.
+- Call the tool with NO arguments.
+- After calling a UI tool, STOP generating text immediately.
 
 [FORMATTING]
 1. Mermaid graphs: Wrap in \`\`\`mermaid blocks.
-2. NO WALLS OF TEXT: If a tool is called, eliminate all conversational summary.
-3. Tables: Use ONLY for deep-dives or massive list queries.
+2. NO WALLS OF TEXT: If a visual tool is called, eliminate all conversational summary.
 
 [AI-IS-TRUTH POLICY]
 1. Academic data MUST come from the tools. No hallucination.`;

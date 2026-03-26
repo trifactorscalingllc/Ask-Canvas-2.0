@@ -12,6 +12,8 @@ import { AssignmentTimeline } from './generative-ui/AssignmentTimeline';
 import { ProgressCircle } from './generative-ui/ProgressCircle';
 import { MermaidDiagram } from './generative-ui/MermaidDiagram';
 import { AcademicDashboard } from './generative-ui/AcademicDashboard';
+import { WorkloadChart } from './generative-ui/WorkloadChart';
+import { TriageBoard } from './generative-ui/TriageBoard';
 
 export interface Message {
   id: string;
@@ -93,7 +95,7 @@ function AssistantBubble({ message, isLast, isStreaming, onFeedback, feedbackSta
       if (name === 'render_timeline') {
         return <AssignmentTimeline key={idx} assignments={args.assignments} />;
       }
-      if (name === 'render_academic_dashboard') {
+      if (name === 'render_academic_dashboard' || name === 'render_workload_chart' || name === 'render_triage_board') {
         // SMART HANDOFF: Find the most recent 'get_full_academic_context' result in history
         let dashboardData = args;
         for (let i = currentIndex; i >= 0; i--) {
@@ -106,6 +108,9 @@ function AssistantBubble({ message, isLast, isStreaming, onFeedback, feedbackSta
             break;
           }
         }
+
+        if (name === 'render_workload_chart') return <WorkloadChart key={idx} data={dashboardData} />;
+        if (name === 'render_triage_board') return <TriageBoard key={idx} data={dashboardData} />;
         return <AcademicDashboard key={idx} data={dashboardData} />;
       }
       if (name === 'render_progress_circle') {
