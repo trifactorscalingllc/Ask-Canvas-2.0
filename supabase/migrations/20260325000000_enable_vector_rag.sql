@@ -18,12 +18,14 @@ WITH (lists = 100);
 ALTER TABLE course_documents ENABLE ROW LEVEL SECURITY;
 
 -- Policies: Authenticated users can read
+DROP POLICY IF EXISTS "Users can read course documents" ON course_documents;
 CREATE POLICY "Users can read course documents"
 ON course_documents FOR SELECT
 TO authenticated
 USING (true);
 
 -- Service role exclusively for ingestion
+DROP POLICY IF EXISTS "Service role can manage documents" ON course_documents;
 CREATE POLICY "Service role can manage documents"
 ON course_documents FOR ALL
 TO service_role

@@ -18,9 +18,9 @@ const openai = new OpenAI({
   }
 })
 
-// Client for embeddings (Cerebras is LLM only)
+// Client for embeddings (Using proxy/unified key as requested)
 const embeddingClient = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+  apiKey: process.env.CEREBRAS_API_KEY
 })
 
 const startTime = Date.now()
