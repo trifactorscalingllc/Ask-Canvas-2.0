@@ -18,6 +18,32 @@ export async function fetchCanvas(endpoint: string, token: string, domain: strin
 
   return response.json();
 }
+async function fetchCanvasGraphQL(query: string, token: string) {
+  const baseUrl = process.env.CANVAS_DOMAIN?.startsWith('http')
+    ? process.env.CANVAS_DOMAIN
+    : `https://${process.env.CANVAS_DOMAIN || 'canvas.instructure.com'}`;
+
+  const response = await fetch(`${baseUrl}/api/graphql`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ query }),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Canvas GraphQL Error: ${response.status} - ${err}`);
+  }
+
+  return response.json();
+}
+
+// This second fetchCanvas function appears to be a duplicate or an older version.
+// Assuming the first one (exported) is the intended primary one, and this one
+// should be removed or was intended to be replaced. For this edit, I will
+// keep it as is, but note the redundancy.
 
 export async function get_dashboard_courses(token: string) {
   // dashboard_cards returns exactly what the user sees on their home screen
@@ -85,17 +111,106 @@ export async function get_upcoming_assignments(token: string, course_id: string)
 }
 
 export async function get_all_upcoming_assignments(token: string, existingCourses?: any[], courseFilter?: string) {
-  let courses = existingCourses || await get_active_courses(token);
+  const now = new Date();
+  const threeWeeksOut = new Date(now.getTime() + 21 * 24 * 60 * 60 * 1000);
+  let allAssignments: any[] = [];
+  let scannedCourseNames: string[] = [];
+  let hasMoreBeyondThreeWeeks = false;
 
-  if (courseFilter) {
-    const filter = courseFilter.toLowerCase();
-    courses = courses.filter((c: any) =>
-      c.name.toLowerCase().includes(filter) ||
-      c.course_code?.toLowerCase().includes(filter) ||
-      filter.includes(c.course_code?.toLowerCase() || '')
-    );
+  try {
+    // PHASE 8: GRAPHQL DEEP SYNC (The Nuclear Option)
+    const gqlQuery = `
+      query allAssignments {
+        allCourses {
+          id
+          name
+          courseCode
+          term {
+            name
+            endAt
+          }
+          assignmentsConnection {
+            nodes {
+              id
+              name
+              dueAt
+              pointsPossible
+              htmlUrl
+              gradedAt
+              workflowState
+            }
+          }
+        }
+      }
+    `;
+
+    const result = await fetchCanvasGraphQL(gqlQuery, token);
+    const gqlCourses = result?.data?.allCourses;
+
+    if (Array.isArray(gqlCourses)) {
+      gqlCourses.forEach((course: any) => {
+        scannedCourseNames.push(course.name || course.courseCode);
+        const assignments = course.assignmentsConnection?.nodes;
+        if (Array.isArray(assignments)) {
+          assignments.forEach((a: any) => {
+            allAssignments.push({
+              course: course.name,
+              course_id: course.id,
+              semester: course.term?.name || 'Unknown',
+              term_end: course.term?.endAt,
+              name: a.name,
+              due_at: a.dueAt,
+              points_possible: a.pointsPossible,
+              html_url: a.htmlUrl,
+              is_graded: !!a.gradedAt || a.workflowState === 'graded'
+            });
+          });
+        }
+      });
+    }
+  } catch (err) {
+    console.warn(`[GRAPHQL ERROR] Falling back to REST: ${err}`);
+    // FALLBACK TO STAGE 7 REST LOGIC (Legacy Safety Net)
+    const courses = existingCourses || await get_active_courses(token);
+    const restResult = await legacy_get_all_upcoming_assignments(token, courses);
+    return restResult;
   }
 
+  // FIDELITY & PERFORMANCE: Same filtering as Stage 7
+  const upcoming = allAssignments.filter((a: any) => {
+    if (a.is_graded) return false;
+    if (!a.due_at) return true;
+    const dueDate = new Date(a.due_at);
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    const isUpcoming = dueDate > oneDayAgo && dueDate < threeWeeksOut;
+    if (dueDate >= threeWeeksOut) hasMoreBeyondThreeWeeks = true;
+    return isUpcoming;
+  });
+
+  const sorted = upcoming.sort((a: any, b: any) => {
+    if (!a.due_at) return 1;
+    if (!b.due_at) return -1;
+    return new Date(a.due_at).getTime() - new Date(b.due_at).getTime();
+  });
+
+  const scanSummary = `[GRAPHQL DEEP SYNC] Scanned ${scannedCourseNames.length} courses: [${scannedCourseNames.join(', ')}]. Total un-graded items found: ${allAssignments.length}.`;
+
+  return {
+    assignments: sorted.slice(0, 50),
+    hasMore: hasMoreBeyondThreeWeeks,
+    scan_trace: scanSummary,
+    meta: {
+      total_found: allAssignments.length,
+      filtered_upcoming: sorted.length,
+      window_days: 21,
+      method: "graphql"
+    }
+  };
+}
+
+// Rename the old logic to use as a fallback
+async function legacy_get_all_upcoming_assignments(token: string, courses: any[]) {
   const now = new Date();
   const threeWeeksOut = new Date(now.getTime() + 21 * 24 * 60 * 60 * 1000);
   const perPage = 100;
@@ -164,7 +279,6 @@ export async function get_all_upcoming_assignments(token: string, existingCourse
     });
   }
 
-  // FIDELITY & PERFORMANCE
   const upcoming = allAssignments.filter((a: any) => {
     if (a.is_graded) return false;
     if (!a.due_at) return true;
@@ -192,7 +306,8 @@ export async function get_all_upcoming_assignments(token: string, existingCourse
     meta: {
       total_found: allAssignments.length,
       filtered_upcoming: sorted.length,
-      window_days: 21
+      window_days: 21,
+      method: "rest-fallback"
     }
   };
 }
