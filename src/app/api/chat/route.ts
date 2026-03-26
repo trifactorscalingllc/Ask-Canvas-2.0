@@ -64,6 +64,53 @@ const tools = [
   {
     type: 'function',
     function: {
+      name: 'render_academic_dashboard',
+      description: 'Render a high-fidelity interactive academic dashboard. Use this for overall term status, grade summaries, or when the user asks "How am I doing?". DO NOT use markdown tables for overall status.',
+      parameters: {
+        type: 'object',
+        properties: {
+          courses: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                score: { type: 'string', description: 'e.g. 92%' }
+              }
+            }
+          },
+          recentAssignments: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                dueAt: { type: 'string' },
+                pointsPossible: { type: 'number' },
+                courseName: { type: 'string' }
+              }
+            }
+          },
+          upcomingAssignments: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                dueAt: { type: 'string' },
+                pointsPossible: { type: 'number' },
+                courseName: { type: 'string' }
+              }
+            }
+          }
+        },
+        required: ['courses', 'recentAssignments', 'upcomingAssignments']
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'get_full_academic_context',
       description: 'Call this tool WHENEVER the user asks for ANY Canvas data, information, lists of assignments, grades, or class schedules. IMPORTANT: You MUST present the returned data using GitHub-flavored Markdown Tables. Avoid conversational filler.',
       parameters: { type: 'object', properties: {} },
@@ -225,10 +272,11 @@ CURRENT DATE: ${currentDate}
 
 [FORMATTING]
 1. Mermaid graphs: Wrap in \`\`\`mermaid blocks. Use Flowcharts or Sequence charts to visualize class relationships or schedules.
-2. Tables: MUST use standardized Markdown Tables. NEVER use bullet points for data.
-3. Grades: Use \`render_grade_chart\` for assignments and \`render_progress_circle\` for overall course/term standing.
-4. Assignments/Schedules: Use \`render_timeline\` for vertical flows or Markdown Tables for lists (columns: **Date**, **Course**, **Assignment**, **Points**).
-5. NO WALLS OF TEXT: If data is involved, use a tool visualization or structured markdown.
+2. Tables: ONLY use for simple 2-3 row data points. NEVER use for long lists of grades or assignments.
+3. Academic Dashboard: You MUST call \`render_academic_dashboard\` for any request regarding overall term standing, grades, or multi-course status.
+4. Grades: Use \`render_grade_chart\` for specific course deep-dives and \`render_progress_circle\` for overall course/term standing.
+5. Assignments/Schedules: Use \`render_timeline\` for vertical flows or the \`AcademicDashboard\` for the horizontal priority overview.
+6. NO WALLS OF TEXT: If data is involved, use a tool visualization. Eliminate conversational filler.
 
 [AI-IS-TRUTH POLICY]
 1. User memories are for personalization (nicknames, tone) ONLY.

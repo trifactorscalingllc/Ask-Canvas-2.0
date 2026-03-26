@@ -11,6 +11,7 @@ import { GradeChart } from './generative-ui/GradeChart';
 import { AssignmentTimeline } from './generative-ui/AssignmentTimeline';
 import { ProgressCircle } from './generative-ui/ProgressCircle';
 import { MermaidDiagram } from './generative-ui/MermaidDiagram';
+import { AcademicDashboard } from './generative-ui/AcademicDashboard';
 
 export interface Message {
   id: string;
@@ -58,6 +59,9 @@ function AssistantBubble({ message, isLast, isStreaming, onFeedback, feedbackSta
       }
       if (name === 'render_timeline') {
         return <AssignmentTimeline key={idx} assignments={args.assignments} />;
+      }
+      if (name === 'render_academic_dashboard') {
+        return <AcademicDashboard key={idx} data={args} />;
       }
       if (name === 'render_progress_circle') {
         return <ProgressCircle key={idx} data={args.data} title={args.title} />;
